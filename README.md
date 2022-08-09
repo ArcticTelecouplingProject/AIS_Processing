@@ -1,0 +1,2 @@
+# AISProcessing_V2
+The purpose of this repository is to develop a revised version of the AIS processing scripts (https://github.com/kellykapsar/AISProcessing) developed in the initial processing of the 2015-2020 exactEarth AIS data (with final data available at https://arcticdata.io/catalog/portals/AIS). This version will contain a more streamlined set of scripts as well as updates to fix minor bugs in the original data processing.
