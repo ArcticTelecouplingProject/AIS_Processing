@@ -5,7 +5,7 @@
   # transit segments for individual vessels in vector format. 
 # AUTHOR: Ben Sullender & Kelly Kapsar
 # CREATED: 2021
-# LAST UPDATED ON: -- 
+# LAST UPDATED ON: 2022-08-09
 # 
 # NOTE: Known issue with speed filter -- it does not remove first points if they 
   # are errneous. 
@@ -73,19 +73,19 @@ FWS.AIS <- function(csvList){
   AIScsv[,numcols] <- lapply(AIScsv[,numcols], as.numeric)
   
   # this will come in handy later. chars 28 to 34 = "yyyy-mm"
-  MoName <- substr(csvList[[1]][1],45, 51)
+  MoName <- substr(csvList[[1]][1],77, 83)
   yr <- substr(MoName, 1, 4) 
   mnth <- substr(MoName, 6, 7)
-  print(paste0("Processing",yr, mnth))
+  print(paste("Processing",yr, mnth))
   
   # create df
   # we only care about lookup col, time, lat + long, and non-static messages
   AIScsvDF <- AIScsv %>%
-    dplyr::select(MMSI,Latitude,Longitude,Time,Message_ID,AIS_ID,SOG) %>%
-    filter(Message_ID!=c(5,24)) %>%
+    subset(!(Message_ID %in% c(5,24))) %>%
     filter(!is.na(Latitude)) %>%
     filter(!is.na(Longitude)) %>%
-    filter(nchar(trunc(abs(MMSI))) > 8)
+    filter(nchar(trunc(abs(MMSI))) > 8) %>% 
+    filter(MMSI < 990000000) # Remove stationary aids to navigation
   
   filt_aisids <- length(unique(AIScsvDF$AIS_ID))
   filt_mmsis <- length(unique(AIScsvDF$MMSI))
@@ -102,23 +102,19 @@ FWS.AIS <- function(csvList){
     mutate(speed = NA) %>% arrange(Time)
   
   # Calculate the euclidean speed between points
-  euclidean_speed <- function(lat2, lat1, long2, long1, time2, time1) {
-    latdiff <- lat2 - lat1
-    longdiff <- long2 - long1
-    distance <- sqrt(latdiff^2 + longdiff^2)/1000
-    timediff <- as.numeric(difftime(time2,time1,units=c("hours")))
-    return(distance / timediff)
-  }
-  
-  # Calculate 
+  # Implement speed filter of 100 km/hr 
   AISspeed[, c("long", "lat")] <- st_coordinates(AISspeed)
   AISspeed <- AISspeed %>% 
     group_by(AIS_ID) %>%
     arrange(AIS_ID, Time) %>% 
-    mutate(speed = euclidean_speed(lat, lag(lat), long, lag(long), Time, lag(Time)))
+    mutate(timediff = as.numeric(difftime(Time,lag(Time),units=c("hours"))),
+           distdiff = sqrt((lat-lag(lat))^2 + (long-lag(long))^2)/1000) %>% 
+    filter(timediff > 0) %>% 
+    filter(distdiff > 0) %>% 
+    mutate(speed = distdiff/timediff)
   
   toofast_pts <- length(which(AISspeed$speed >= 100))
-  AISspeed <- AISspeed %>% filter(speed < 100 | is.na(speed))
+  AISspeed <- AISspeed %>% filter(speed < 100) %>% filter(!is.na(speed))
   
   # Remove AIS_IDs with only one point 
   SingleAISid <- AISspeed %>% st_drop_geometry() %>% group_by(AIS_ID) %>% summarize(n=n()) %>% filter(n <= 3)
@@ -215,6 +211,18 @@ write.csv(runtimes, paste0("../Data_Processed/Metadata/Runtimes_",MoName,".csv")
 print(runtimes)
 return(runtimes)
 }
+
+#########################################################
+####################### TEST CODE ####################### 
+#########################################################
+
+# Pull up list of AIS files
+filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2015/"
+
+files <- paste0(filedr, list.files(filedr, pattern='.csv'))
+
+# Separate file names into monthly lists
+csvList <- files[27:28]
 
 ####################################################################
 ####################### PARALLELIZATION CODE ####################### 
