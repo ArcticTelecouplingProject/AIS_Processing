@@ -66,7 +66,7 @@ FWS.AIS <- function(csvList){
   
   orig_aisids <- length(unique(AIScsv$AIS_ID))
   orig_MMSIs <- length(unique(AIScsv$MMSI))
-  
+  orig_pts <- length(AIScsv$MMSI)
   
   # Convert character columns to numeric as needed
   numcols <- c(1:2, 6:12, 14:17)
@@ -80,21 +80,40 @@ FWS.AIS <- function(csvList){
   
   # create df
   # we only care about lookup col, time, lat + long, and non-static messages
-  AIScsvDF <- AIScsv %>%
-    subset(!(Message_ID %in% c(5,24))) %>%
+  AIScsvDF1 <- AIScsv %>%
+    subset(!(Message_ID %in% c(5,24))) 
+  
+  messid_aisids <- length(unique(AIScsvDF1$AIS_ID))
+  messid_mmsis <- length(unique(AIScsvDF1$MMSI))
+  messid_pts <- length(AIScsvDF1$MMSI)
+  
+  AIScsvDF2 <- AIScsv %>%
     filter(!is.na(Latitude)) %>%
-    filter(!is.na(Longitude)) %>%
-    filter(nchar(trunc(abs(MMSI))) > 8) %>% 
+    filter(!is.na(Longitude)) 
+  
+  invallatlon_aisids <- length(unique(AIScsvDF2$AIS_ID))
+  invallatlon__mmsis <- length(unique(AIScsvDF2$MMSI))
+  invallatlon__pts <- length(AIScsvDF2$MMSI)
+  
+  AIScsvDF3 <- AIScsv %>%
+    filter(nchar(trunc(abs(MMSI))) > 8)
+  
+  invalmmsi_aisids <- length(unique(AIScsvDF3$AIS_ID))
+  invalmmsi__mmsis <- length(unique(AIScsvDF3$MMSI))
+  invalmmsi__pts <- length(AIScsvDF3$MMSI)
+  
+  AIScsvDF <- AIScsv %>%
     filter(MMSI < 990000000) # Remove stationary aids to navigation
   
-  filt_aisids <- length(unique(AIScsvDF$AIS_ID))
-  filt_mmsis <- length(unique(AIScsvDF$MMSI))
+  aton_aisids <- length(unique(AIScsvDF$AIS_ID))
+  aton_mmsis <- length(unique(AIScsvDF$MMSI))
+  aton_pts <- length(AIScsvDF$MMSI)
 
   dftime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
   
   # Filter out points > 100 km/hr 
-  AISspeed <- AIScsvDF %>%
+  AISspeed3 <- AIScsvDF %>%
     mutate(Time = as.POSIXct(Time, format="%Y%m%d_%H%M%OS")) %>% 
     st_as_sf(coords=c("Longitude","Latitude"),crs=4326) %>%
     # project into Alaska Albers (or other CRS that doesn't create huge gap in mid-Bering with -180W and 180E)
@@ -104,7 +123,7 @@ FWS.AIS <- function(csvList){
   # Calculate the euclidean speed between points
   # Implement speed filter of 100 km/hr 
   AISspeed[, c("long", "lat")] <- st_coordinates(AISspeed)
-  AISspeed <- AISspeed %>% 
+  AISspeed2 <- AISspeed3 %>% 
     group_by(AIS_ID) %>%
     arrange(AIS_ID, Time) %>% 
     mutate(timediff = as.numeric(difftime(Time,lag(Time),units=c("hours"))),
@@ -113,13 +132,24 @@ FWS.AIS <- function(csvList){
     filter(distdiff > 0) %>% 
     mutate(speed = distdiff/timediff)
   
-  toofast_pts <- length(which(AISspeed$speed >= 100))
-  AISspeed <- AISspeed %>% filter(speed < 100) %>% filter(!is.na(speed))
+  redund_aisids <- length(unique(AISspeed2$AIS_ID))
+  redund_mmsi <- length(unique(AISspeed2$MMSI))
+  redund_pts <- length(AISspeed2$MMSI)
+  
+  AISspeed1 <- AISspeed2 %>% filter(speed < 100) %>% filter(!is.na(speed))
+  
+  speed_aisids <- length(unique(AISspeed1$AIS_ID))
+  speed_mmsi <- length(unique(AISspeed1$MMSI))
+  speed_pts <- length(AISspeed1$MMSI)
   
   # Remove AIS_IDs with only one point 
-  SingleAISid <- AISspeed %>% st_drop_geometry() %>% group_by(AIS_ID) %>% summarize(n=n()) %>% filter(n <= 3)
-  Short_aisids <- length(SingleAISid$AIS_ID)
-  AISspeed <- AISspeed[!(AISspeed$AIS_ID %in% SingleAISid$AIS_ID),] 
+  SingleAISid <- AISspeed1 %>% st_drop_geometry() %>% group_by(AIS_ID) %>% summarize(n=n()) %>% filter(n <= 3)
+
+  AISspeed <- AISspeed1[!(AISspeed1$AIS_ID %in% SingleAISid$AIS_ID),] 
+  
+  short_aisids <- length(unique(AISspeed$AIS_ID))
+  short_mmsi <- length(unique(AISspeed$MMSI))
+  short_pts <- length(AISspeed$MMSI)
   
   speedtime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
@@ -149,7 +179,7 @@ FWS.AIS <- function(csvList){
   AISlookup <- AIScsv %>%
     add_column(DimLength = AIScsv$Dimension_to_Bow+AIScsv$Dimension_to_stern, DimWidth = AIScsv$Dimension_to_port+AIScsv$Dimension_to_starboard) %>%
     dplyr::select(-Dimension_to_Bow,-Dimension_to_stern,-Dimension_to_port,-Dimension_to_starboard) %>%
-    filter(Message_ID==c(5,24)) %>%
+    filter(Message_ID %in% c(5,24)) %>%
     filter(nchar(trunc(abs(MMSI))) > 8) %>% 
     distinct(AIS_ID, .keep_all=TRUE)
   
@@ -200,8 +230,16 @@ vectortime <- (proc.time() - start)[[3]]/60
 
 runtime <- proc.time() - starttime 
 runtime_min <- runtime[[3]]/60 
-summarystats <- data.frame(cbind(yr, mnth, runtime_min, orig_aisids, orig_MMSIs, 
-                                 filt_aisids,filt_mmsis,Short_aisids, toofast_pts, NotLine_aisids, InSfNotLookup_aisids, InLookupNotSf_aisids,
+summarystats <- data.frame(cbind(yr, mnth, runtime_min, orig_aisids, orig_MMSIs, orig_pts, 
+                                 messid_aisids,messid_mmsis, messid_pts,
+                                 invallatlon_aisids,invallatlon_mmsis, invallatlon_pts, 
+                                 invalmmsi_aisids,invalmmsi_mmsis, invalmmsi_pts, 
+                                 aton_aisids,aton_mmsis, aton_pts, 
+                                 redund_aisids,redund_mmsis, redund_pts, 
+                                 speed_aisids,speed_mmsis, speed_pts, 
+                                 short_aisids,short_mmsis, short_pts, 
+                                 
+                                 toofast_pts, NotLine_aisids, InSfNotLookup_aisids, InLookupNotSf_aisids,
                    ntank_aisids, ncargo_aisids, nfish_aisids, nother_aisids, ntotal_aisids, nmmsi))
 write.csv(summarystats, paste0("../Data_Processed/Metadata/Metadata_",MoName,".csv"))
 
