@@ -80,14 +80,14 @@ FWS.AIS <- function(csvList){
   
   # create df
   # we only care about lookup col, time, lat + long, and non-static messages
-  AIScsvDF1 <- AIScsv %>%
+  AIScsvDF3 <- AIScsv %>%
     subset(!(Message_ID %in% c(5,24))) 
   
-  messid_aisids <- length(unique(AIScsvDF1$AIS_ID))
-  messid_mmsis <- length(unique(AIScsvDF1$MMSI))
-  messid_pts <- length(AIScsvDF1$MMSI)
+  messid_aisids <- length(unique(AIScsvDF3$AIS_ID))
+  messid_mmsis <- length(unique(AIScsvDF3$MMSI))
+  messid_pts <- length(AIScsvDF3$MMSI)
   
-  AIScsvDF2 <- AIScsv %>%
+  AIScsvDF2 <- AIScsvDF3 %>%
     filter(!is.na(Latitude)) %>%
     filter(!is.na(Longitude)) 
   
@@ -95,14 +95,14 @@ FWS.AIS <- function(csvList){
   invallatlon__mmsis <- length(unique(AIScsvDF2$MMSI))
   invallatlon__pts <- length(AIScsvDF2$MMSI)
   
-  AIScsvDF3 <- AIScsv %>%
+  AIScsvDF1 <- AIScsvDF2 %>%
     filter(nchar(trunc(abs(MMSI))) > 8)
   
-  invalmmsi_aisids <- length(unique(AIScsvDF3$AIS_ID))
-  invalmmsi__mmsis <- length(unique(AIScsvDF3$MMSI))
-  invalmmsi__pts <- length(AIScsvDF3$MMSI)
+  invalmmsi_aisids <- length(unique(AIScsvDF1$AIS_ID))
+  invalmmsi__mmsis <- length(unique(AIScsvDF1$MMSI))
+  invalmmsi__pts <- length(AIScsvDF1$MMSI)
   
-  AIScsvDF <- AIScsv %>%
+  AIScsvDF <- AIScsvDF1 %>%
     filter(MMSI < 990000000) # Remove stationary aids to navigation
   
   aton_aisids <- length(unique(AIScsvDF$AIS_ID))
@@ -122,7 +122,7 @@ FWS.AIS <- function(csvList){
   
   # Calculate the euclidean speed between points
   # Implement speed filter of 100 km/hr 
-  AISspeed[, c("long", "lat")] <- st_coordinates(AISspeed)
+  AISspeed3[, c("long", "lat")] <- st_coordinates(AISspeed3)
   AISspeed2 <- AISspeed3 %>% 
     group_by(AIS_ID) %>%
     arrange(AIS_ID, Time) %>% 
@@ -141,24 +141,37 @@ FWS.AIS <- function(csvList){
   speed_aisids <- length(unique(AISspeed1$AIS_ID))
   speed_mmsi <- length(unique(AISspeed1$MMSI))
   speed_pts <- length(AISspeed1$MMSI)
-  
+  ##################################################################################################################
   # Remove AIS_IDs with only one point 
-  SingleAISid <- AISspeed1 %>% st_drop_geometry() %>% group_by(AIS_ID) %>% summarize(n=n()) %>% filter(n <= 3)
+  # SingleAISid <- AISspeed1 %>% st_drop_geometry() %>% group_by(AIS_ID) %>% summarize(n=n()) %>% filter(n <= 3)
+  # 
+  # AISspeed <- AISspeed1[!(AISspeed1$AIS_ID %in% SingleAISid$AIS_ID),] 
+  # 
 
-  AISspeed <- AISspeed1[!(AISspeed1$AIS_ID %in% SingleAISid$AIS_ID),] 
+  AISspeed1$newseg <- ifelse(AISspeed1$timediff > 6, 1, 
+                            ifelse(AISspeed1$distdiff > 30, 1, 0))
+  AISspeed1$newseg[1] <- 1
+  temp <- AISspeed1 %>% st_drop_geometry() %>% select(AIS_ID, newseg) %>% group_by(AIS_ID) %>% mutate(newseg = cumsum(newseg))
+  
+  AISspeed1$newsegid <- paste0(AISspeed1$AIS_ID, temp$newseg)
+  
+  shortids <- AISspeed1 %>% st_drop_geometry() %>% group_by(newsegid) %>% summarize(n=n()) %>% filter(n < 2)
+  
+  AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
   
   short_aisids <- length(unique(AISspeed$AIS_ID))
   short_mmsi <- length(unique(AISspeed$MMSI))
   short_pts <- length(AISspeed$MMSI)
   
   speedtime <- (proc.time() - start)[[3]]/60
+  
   start <- proc.time()
   
   # create sf lines by sorted / grouped points
   AISsf <- AISspeed %>%
     arrange(Time) %>%
     # create 1 line per AIS ID
-    group_by(AIS_ID) %>%
+    group_by(newsegid) %>%
     # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
     summarize(MMSI=first(MMSI),do_union=FALSE, npoints=n()) %>%
     st_cast("LINESTRING") %>% 
@@ -166,9 +179,11 @@ FWS.AIS <- function(csvList){
 
   # Figure out which rows aren't LINESTRINGS and remove from data 
   notlines <- AISsf[which(st_geometry_type(AISsf) != "LINESTRING"),]
-  AISsf <- AISsf[-which(st_geometry_type(AISsf) != "LINESTRING"),]
+  AISsf <- AISsf[which(st_geometry_type(AISsf) == "LINESTRING"),]
   NotLine_aisids <- length(notlines$AIS_ID)
   
+  st_write(AISsf, "Test3_2020.shp")
+  ##################################################################################################################
   linetime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
   
@@ -255,7 +270,7 @@ return(runtimes)
 #########################################################
 
 # Pull up list of AIS files
-filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2015/"
+filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2020/"
 
 files <- paste0(filedr, list.files(filedr, pattern='.csv'))
 
