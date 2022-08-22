@@ -37,7 +37,7 @@ library(doParallel)
 ## Monthly shapefiles for each ship type containing vectorized daily ship transit segments
 ## Text file with output information (number of unique ships, rows excluded, etc.)
 
-FWS.AIS <- function(csvList){
+FWS.AIS <- function(csvList, flags){
   # start timer 
   starttime <- proc.time()
   
@@ -48,6 +48,17 @@ FWS.AIS <- function(csvList){
   temp <- NA
   
   start <- proc.time()
+  
+  # this will come in handy later. chars 28 to 34 = "yyyy-mm"
+  MoName <- substr(csvList[[1]][1],77, 83)
+  yr <- substr(MoName, 1, 4) 
+  mnth <- substr(MoName, 6, 7)
+  print(paste("Processing",yr, mnth))
+  
+  # set up dfs for metadata and runtimes
+  metadata <- data.frame(yr = yr, mnth=mnth)
+  runtimes <- data.frame(yr = yr, mnth=mnth)
+  
   # read in csv (specifying only columns that we want based on position in dataframe)
   temp <-  lapply(csvList, read.csv, header=TRUE, na.strings=c("","NA"),
                   colClasses = c(rep("character", 2), "NULL", "character", "NULL", "NULL", 
@@ -58,58 +69,53 @@ FWS.AIS <- function(csvList){
   
   AIScsv <- do.call(rbind , temp)
   
-  importtime <- (proc.time() - start)[[3]]/60
+  runtimes$importtime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
   
   # Create AIS_ID field
   AIScsv <- AIScsv %>% add_column(AIS_ID = paste0(AIScsv$MMSI,"-",substr(AIScsv$Time,1,8)))
   
-  orig_aisids <- length(unique(AIScsv$AIS_ID))
-  orig_MMSIs <- length(unique(AIScsv$MMSI))
-  orig_pts <- length(AIScsv$MMSI)
+  metadata$orig_aisids <- length(unique(AIScsv$AIS_ID))
+  metadata$orig_MMSIs <- length(unique(AIScsv$MMSI))
+  metadata$orig_pts <- length(AIScsv$MMSI)
   
   # Convert character columns to numeric as needed
   numcols <- c(1:2, 6:12, 14:17)
   AIScsv[,numcols] <- lapply(AIScsv[,numcols], as.numeric)
   
-  # this will come in handy later. chars 28 to 34 = "yyyy-mm"
-  MoName <- substr(csvList[[1]][1],77, 83)
-  yr <- substr(MoName, 1, 4) 
-  mnth <- substr(MoName, 6, 7)
-  print(paste("Processing",yr, mnth))
-  
   # create df
   # we only care about lookup col, time, lat + long, and non-static messages
   AIScsvDF3 <- AIScsv %>%
-    subset(!(Message_ID %in% c(5,24))) 
+    dplyr::select(MMSI,Latitude,Longitude,Time,Message_ID,AIS_ID,SOG) %>%
+    subset(!(Message_ID %in% c(5,24)))
   
-  messid_aisids <- length(unique(AIScsvDF3$AIS_ID))
-  messid_mmsis <- length(unique(AIScsvDF3$MMSI))
-  messid_pts <- length(AIScsvDF3$MMSI)
+  metadata$messid_aisids <- length(unique(AIScsvDF3$AIS_ID))
+  metadata$messid_mmsis <- length(unique(AIScsvDF3$MMSI))
+  metadata$messid_pts <- length(AIScsvDF3$MMSI)
   
   AIScsvDF2 <- AIScsvDF3 %>%
     filter(!is.na(Latitude)) %>%
     filter(!is.na(Longitude)) 
   
-  invallatlon_aisids <- length(unique(AIScsvDF2$AIS_ID))
-  invallatlon__mmsis <- length(unique(AIScsvDF2$MMSI))
-  invallatlon__pts <- length(AIScsvDF2$MMSI)
+  metadata$invallatlon_aisids <- length(unique(AIScsvDF2$AIS_ID))
+  metadata$invallatlon__mmsis <- length(unique(AIScsvDF2$MMSI))
+  metadata$invallatlon__pts <- length(AIScsvDF2$MMSI)
   
   AIScsvDF1 <- AIScsvDF2 %>%
     filter(nchar(trunc(abs(MMSI))) > 8)
   
-  invalmmsi_aisids <- length(unique(AIScsvDF1$AIS_ID))
-  invalmmsi__mmsis <- length(unique(AIScsvDF1$MMSI))
-  invalmmsi__pts <- length(AIScsvDF1$MMSI)
+  metadata$invalmmsi_aisids <- length(unique(AIScsvDF1$AIS_ID))
+  metadata$invalmmsi__mmsis <- length(unique(AIScsvDF1$MMSI))
+  metadata$invalmmsi__pts <- length(AIScsvDF1$MMSI)
   
   AIScsvDF <- AIScsvDF1 %>%
     filter(MMSI < 990000000) # Remove stationary aids to navigation
   
-  aton_aisids <- length(unique(AIScsvDF$AIS_ID))
-  aton_mmsis <- length(unique(AIScsvDF$MMSI))
-  aton_pts <- length(AIScsvDF$MMSI)
+  metadata$aton_aisids <- length(unique(AIScsvDF$AIS_ID))
+  metadata$aton_mmsis <- length(unique(AIScsvDF$MMSI))
+  metadata$aton_pts <- length(AIScsvDF$MMSI)
 
-  dftime <- (proc.time() - start)[[3]]/60
+  runtimes$dftime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
   
   # Filter out points > 100 km/hr 
@@ -132,24 +138,19 @@ FWS.AIS <- function(csvList){
     filter(distdiff > 0) %>% 
     mutate(speed = distdiff/timediff)
   
-  redund_aisids <- length(unique(AISspeed2$AIS_ID))
-  redund_mmsi <- length(unique(AISspeed2$MMSI))
-  redund_pts <- length(AISspeed2$MMSI)
+  metadata$redund_aisids <- length(unique(AISspeed2$AIS_ID))
+  metadata$redund_mmsi <- length(unique(AISspeed2$MMSI))
+  metadata$redund_pts <- length(AISspeed2$MMSI)
   
   AISspeed1 <- AISspeed2 %>% filter(speed < 100) %>% filter(!is.na(speed))
   
-  speed_aisids <- length(unique(AISspeed1$AIS_ID))
-  speed_mmsi <- length(unique(AISspeed1$MMSI))
-  speed_pts <- length(AISspeed1$MMSI)
+  metadata$speed_aisids <- length(unique(AISspeed1$AIS_ID))
+  metadata$speed_mmsi <- length(unique(AISspeed1$MMSI))
+  metadata$speed_pts <- length(AISspeed1$MMSI)
   ##################################################################################################################
-  # Remove AIS_IDs with only one point 
-  # SingleAISid <- AISspeed1 %>% st_drop_geometry() %>% group_by(AIS_ID) %>% summarize(n=n()) %>% filter(n <= 3)
-  # 
-  # AISspeed <- AISspeed1[!(AISspeed1$AIS_ID %in% SingleAISid$AIS_ID),] 
-  # 
 
   AISspeed1$newseg <- ifelse(AISspeed1$timediff > 6, 1, 
-                            ifelse(AISspeed1$distdiff > 30, 1, 0))
+                            ifelse(AISspeed1$distdiff > 60, 1, 0))
   AISspeed1$newseg[1] <- 1
   temp <- AISspeed1 %>% st_drop_geometry() %>% select(AIS_ID, newseg) %>% group_by(AIS_ID) %>% mutate(newseg = cumsum(newseg))
   
@@ -159,12 +160,11 @@ FWS.AIS <- function(csvList){
   
   AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
   
-  short_aisids <- length(unique(AISspeed$AIS_ID))
-  short_mmsi <- length(unique(AISspeed$MMSI))
-  short_pts <- length(AISspeed$MMSI)
+  metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
+  metadata$short_mmsi <- length(unique(AISspeed$MMSI))
+  metadata$short_pts <- length(AISspeed$MMSI)
   
-  speedtime <- (proc.time() - start)[[3]]/60
-  
+  runtimes$speedtime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
   
   # create sf lines by sorted / grouped points
@@ -173,37 +173,55 @@ FWS.AIS <- function(csvList){
     # create 1 line per AIS ID
     group_by(newsegid) %>%
     # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
-    summarize(MMSI=first(MMSI),do_union=FALSE, npoints=n()) %>%
+    summarize(MMSI=first(MMSI), AIS_ID=first(AIS_ID), SOG_median=median(SOG, na.rm=T), SOG_mean=mean(SOG, na.rm=T), do_union=FALSE, npoints=n()) %>%
     st_cast("LINESTRING") %>% 
-    st_make_valid()
+    st_make_valid() %>% 
+    group_by()
 
   # Figure out which rows aren't LINESTRINGS and remove from data 
   notlines <- AISsf[which(st_geometry_type(AISsf) != "LINESTRING"),]
   AISsf <- AISsf[which(st_geometry_type(AISsf) == "LINESTRING"),]
-  NotLine_aisids <- length(notlines$AIS_ID)
+  metadata$NotLine_aisids <- length(notlines$AIS_ID)
   
-  st_write(AISsf, "Test3_2020.shp")
   ##################################################################################################################
-  linetime <- (proc.time() - start)[[3]]/60
+  runtimes$linetime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
   
+  # Calculate total distance travelled
+  AISsf$length_km <- as.numeric(st_length(AISsf)/1000)
+
   # create lookup table
   # we only care about 7 columns in total: lookup col (MMSI + date), name + IMO (in case we have duplicates / want to do an IMO-based lookup in the future),
   #     ship type, and size (in 3 cols: width, length, Draught)
   #     I'm including Destination and Country because that would be dope! We could do stuff with innocent passage if that's well populated.
-  AISlookup <- AIScsv %>%
+  
+  AISlookup1 <- AIScsv %>%
     add_column(DimLength = AIScsv$Dimension_to_Bow+AIScsv$Dimension_to_stern, DimWidth = AIScsv$Dimension_to_port+AIScsv$Dimension_to_starboard) %>%
     dplyr::select(-Dimension_to_Bow,-Dimension_to_stern,-Dimension_to_port,-Dimension_to_starboard) %>%
     filter(Message_ID %in% c(5,24)) %>%
-    filter(nchar(trunc(abs(MMSI))) > 8) %>% 
-    distinct(AIS_ID, .keep_all=TRUE)
+    filter(nchar(trunc(abs(MMSI))) > 8) 
   
-  InSfNotLookup_aisids <- length(AISsf$AIS_ID[!(AISsf$AIS_ID %in% AISlookup$AIS_ID)])
-  InLookupNotSf_aisids <- length(AISlookup$AIS_ID[!(AISlookup$AIS_ID %in% AISsf$AIS_ID)])
+  # This code takes all the static messages from a given month and downweights messages with a ship 
+  # type of 0 or NA. It then takes the static messages and keeps the message with the heighest weight
+  # Code adapted from: https://stackoverflow.com/questions/72650475/take-unique-rows-in-r-but-keep-most-common-value-of-a-column-and-use-hierarchy
+  wghts <- data.frame(poss = c(0, NA), nums = c(-10, -10))
+  matched <- left_join(AISlookup1, wghts, by = c("Ship_Type"= "poss"))
+  matched$nums[is.na(matched$nums)] <- 1
+  data.table::setDT(matched)[, freq := .N, by = c("MMSI", "Ship_Type")]
+  multiplied <- distinct(matched, MMSI, Ship_Type, .keep_all = TRUE)
+  multiplied$mult <- multiplied$nums * multiplied$freq
+  check <- multiplied[with(multiplied, order(MMSI, -mult)), ]
+  AISlookup <- distinct(check, MMSI, .keep_all = TRUE) %>% select(-nums, -freq, -mult)
+  
+  metadata$InSfNotLookup_aisids <- length(AISsf$AIS_ID[!(AISsf$AIS_ID %in% AISlookup$AIS_ID)])
+  metadata$InLookupNotSf_aisids <- length(AISlookup$AIS_ID[!(AISlookup$AIS_ID %in% AISsf$AIS_ID)])
+  
+  # Add flag codes 
+  AISlookup <- AISlookup %>% mutate(CountryCode = as.numeric(substr(as.character(MMSI), 1,3))) %>% select(-Country) %>% left_join(flags, by=c("CountryCode" = "MID"))
   
   # step 2: join lookup table to the lines 
   AISjoined <- AISsf %>%
-    left_join(AISlookup,by="AIS_ID")
+    left_join(AISlookup,by="MMSI")
   
   # step 3: split lines by ship type
   # link to ship type/numbers table: 
@@ -212,20 +230,29 @@ FWS.AIS <- function(csvList){
       mutate(AIS_Type = case_when(
       is.na(AISjoined$Ship_Type) ~ "Other",
       substr(AISjoined$Ship_Type,1,2)==30 ~ "Fishing",
+      substr(AISjoined$Ship_Type,1,2)==52 ~ "Tug",
+      substr(AISjoined$Ship_Type,1,1)==6 ~ "Passenger",
+      substr(AISjoined$Ship_Type,1,2)==36 ~ "Sailing",
+      substr(AISjoined$Ship_Type,1,2)==37 ~ "Pleasure",
       substr(AISjoined$Ship_Type,1,1)==7 ~ "Cargo",
       substr(AISjoined$Ship_Type,1,1)==8 ~ "Tanker",
       # from trial and error, I think that this last "TRUE" serves as a catch-all, but I can't logically figure out why it works. -\__(%)__/-
       TRUE ~ "Other"
     ))  
   
-  ntank_aisids <- length(which(AISjoined$AIS_Type == "Tanker"))
-  nfish_aisids <- length(which(AISjoined$AIS_Type == "Fishing"))
-  ncargo_aisids <- length(which(AISjoined$AIS_Type == "Cargo"))
-  nother_aisids <- length(which(AISjoined$AIS_Type == "Other"))
-  ntotal_aisids <- length(AISjoined$AIS_Type)
-  nmmsi <- length(unique(AISjoined$MMSI.x))
+    
+  nships <- AISjoined %>% st_drop_geometry() %>% group_by(AIS_Type) %>% summarize(n=length(unique(MMSI)))
+  metadata$ntank_mmsis <- nships$n[nships$AIS_Type == "Tanker"]
+  metadata$ntug_mmsis <- nships$n[nships$AIS_Type == "Tug"]
+  metadata$npass_mmsis <-nships$n[nships$AIS_Type == "Passenger"]
+  metadata$nsail_mmsis <-nships$n[nships$AIS_Type == "Sailing"]
+  metadata$npleas_mmsis <-nships$n[nships$AIS_Type == "Pleasure"]
+  metadata$nfish_mmsis <- nships$n[nships$AIS_Type == "Fishing"]
+  metadata$ncargo_mmsis <- nships$n[nships$AIS_Type == "Cargo"]
+  metadata$nother_mmsis <- nships$n[nships$AIS_Type == "Other"]
+  metadata$ntotal_mmsis <- sum(nships$n)
   
-  jointime <- (proc.time() - start)[[3]]/60
+  runtimes$jointime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
   
   # Loop through each ship type, rasterize, and save shp file as well 
@@ -237,30 +264,20 @@ FWS.AIS <- function(csvList){
                 filter(AIS_Type==allTypes[k])
 
           # Save data in vector format
-          write_sf(AISfilteredType,paste0("../Data_Processed/Vector/Tracks_",MoName,"-",allTypes[k],".shp"))
+          if(length(AISfilteredType$newsegid > 0)){
+            write_sf(AISfilteredType,paste0("./Data_Processed/Tracks_",MoName,"-",allTypes[k],".shp"))
+          }
   }
   
 # Save processing info to text file 
-vectortime <- (proc.time() - start)[[3]]/60
+runtimes$vectortime <- (proc.time() - start)[[3]]/60
 
 runtime <- proc.time() - starttime 
-runtime_min <- runtime[[3]]/60 
-summarystats <- data.frame(cbind(yr, mnth, runtime_min, orig_aisids, orig_MMSIs, orig_pts, 
-                                 messid_aisids,messid_mmsis, messid_pts,
-                                 invallatlon_aisids,invallatlon_mmsis, invallatlon_pts, 
-                                 invalmmsi_aisids,invalmmsi_mmsis, invalmmsi_pts, 
-                                 aton_aisids,aton_mmsis, aton_pts, 
-                                 redund_aisids,redund_mmsis, redund_pts, 
-                                 speed_aisids,speed_mmsis, speed_pts, 
-                                 short_aisids,short_mmsis, short_pts, 
-                                 
-                                 toofast_pts, NotLine_aisids, InSfNotLookup_aisids, InLookupNotSf_aisids,
-                   ntank_aisids, ncargo_aisids, nfish_aisids, nother_aisids, ntotal_aisids, nmmsi))
-write.csv(summarystats, paste0("../Data_Processed/Metadata/Metadata_",MoName,".csv"))
+runtimes$runtime_min <- runtime[[3]]/60 
 
+write.csv(metadata, paste0("./Data_Processed/Metadata/Metadata_",MoName,".csv"))
 
-runtimes <- data.frame(cbind(yr, mnth, runtime_min, importtime, dftime, speedtime, linetime, jointime, vectortime)) 
-write.csv(runtimes, paste0("../Data_Processed/Metadata/Runtimes_",MoName,".csv"))
+write.csv(runtimes, paste0("./Data_Processed/Metadata/Runtimes_",MoName,".csv"))
 print(runtimes)
 return(runtimes)
 }
@@ -270,12 +287,14 @@ return(runtimes)
 #########################################################
 
 # Pull up list of AIS files
-filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2020/"
+filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2015/"
 
 files <- paste0(filedr, list.files(filedr, pattern='.csv'))
 
 # Separate file names into monthly lists
 csvList <- files[27:28]
+
+flags <- read.csv("./FlagCodes.csv")
 
 ####################################################################
 ####################### PARALLELIZATION CODE ####################### 
@@ -301,6 +320,8 @@ dec <- files[grepl("-12-", files)]
 # Create a list of lists of all csv file names grouped by month
 csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
 
+# Import flag code reference list
+flags <- read.csv("./FlagCodes.csv")
 
 ## MSU HPCC: https://wiki.hpcc.msu.edu/display/ITH/R+workshop+tutorial#Rworkshoptutorial-Submittingparalleljobstotheclusterusing{doParallel}:singlenode,multiplecores
 # Request a single node (this uses the "multicore" functionality)
@@ -313,8 +334,8 @@ res=list()
 # foreach and %dopar% work together to implement the parallelization
 # note that you have to tell each core what packages you need (another reason to minimize library use), so it can pull those over
 # I'm using tidyverse since it combines dplyr and tidyr into one library (I think)
-res=foreach(i=1:12,.packages=c("maptools", "rgdal", "dplyr", "tidyr", "tibble", "stars", "raster", "foreach", "doParallel"),
-            .errorhandling='pass',.verbose=T,.multicombine=TRUE) %dopar% FWS.AIS(csvList=csvsByMonth[[i]])
+res=foreach(i=1:12,.packages=c("maptools", "rgdal", "dplyr", "tidyr", "tibble", "stars", "raster", "foreach", "doParallel", "data.table"),
+            .errorhandling='pass',.verbose=T,.multicombine=TRUE) %dopar% FWS.AIS(csvList=csvsByMonth[[i]], flags=flags)
 # lapply(csvsByMonth, FWS.AIS)
 
 # Elapsed time and running information
