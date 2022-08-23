@@ -37,7 +37,7 @@ library(doParallel)
 ## Monthly shapefiles for each ship type containing vectorized daily ship transit segments
 ## Text file with output information (number of unique ships, rows excluded, etc.)
 
-FWS.AIS <- function(csvList, flags){
+FWS.AIS <- function(csvList, flags, scrambleids){
   # start timer 
   starttime <- proc.time()
   
@@ -102,7 +102,7 @@ FWS.AIS <- function(csvList, flags){
   metadata$invallatlon__pts <- length(AIScsvDF2$MMSI)
   
   AIScsvDF1 <- AIScsvDF2 %>%
-    filter(nchar(trunc(abs(MMSI))) > 8)
+    filter(nchar(trunc(abs(MMSI))) == 9)
   
   metadata$invalmmsi_aisids <- length(unique(AIScsvDF1$AIS_ID))
   metadata$invalmmsi__mmsis <- length(unique(AIScsvDF1$MMSI))
@@ -295,6 +295,7 @@ files <- paste0(filedr, list.files(filedr, pattern='.csv'))
 csvList <- files[27:28]
 
 flags <- read.csv("./FlagCodes.csv")
+scrambleids <- read.csv("./Data_Processed/ScrambleIDs.csv") %>% select(MMSI, scramblemmsi)
 
 ####################################################################
 ####################### PARALLELIZATION CODE ####################### 
