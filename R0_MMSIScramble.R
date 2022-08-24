@@ -64,7 +64,7 @@ set.seed(101557)
 # # Replace last six digits of MMSI with random integers 
 # filtmmsi$scramblemmsi <- paste0(substr(filtmmsi$MMSI, 1, 3), as.character(sample(100000:999999, length(filtmmsi$MMSI), replace=FALSE)))
 
-# write.csv(filtmmsi, "./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020.csv")
+# write.csv(filtmmsi, "./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv")
 
 ################################################################################ 
 ######################## Unique MMSIs in future data ########################### 
