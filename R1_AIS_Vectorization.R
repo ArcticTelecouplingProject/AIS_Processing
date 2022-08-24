@@ -72,10 +72,6 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   runtimes$importtime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
   
-  # Create AIS_ID field
-  AIScsv <- AIScsv %>% add_column(AIS_ID = paste0(AIScsv$MMSI,"-",substr(AIScsv$Time,1,8)))
-  
-  metadata$orig_aisids <- length(unique(AIScsv$AIS_ID))
   metadata$orig_MMSIs <- length(unique(AIScsv$MMSI))
   metadata$orig_pts <- length(AIScsv$MMSI)
   
@@ -86,10 +82,9 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   # create df
   # we only care about lookup col, time, lat + long, and non-static messages
   AIScsvDF3 <- AIScsv %>%
-    dplyr::select(MMSI,Latitude,Longitude,Time,Message_ID,AIS_ID,SOG) %>%
+    dplyr::select(MMSI,Latitude,Longitude,Time,Message_ID,SOG) %>%
     subset(!(Message_ID %in% c(5,24)))
   
-  metadata$messid_aisids <- length(unique(AIScsvDF3$AIS_ID))
   metadata$messid_mmsis <- length(unique(AIScsvDF3$MMSI))
   metadata$messid_pts <- length(AIScsvDF3$MMSI)
   
@@ -97,23 +92,26 @@ FWS.AIS <- function(csvList, flags, scrambleids){
     filter(!is.na(Latitude)) %>%
     filter(!is.na(Longitude)) 
   
-  metadata$invallatlon_aisids <- length(unique(AIScsvDF2$AIS_ID))
   metadata$invallatlon__mmsis <- length(unique(AIScsvDF2$MMSI))
   metadata$invallatlon__pts <- length(AIScsvDF2$MMSI)
   
   AIScsvDF1 <- AIScsvDF2 %>%
     filter(nchar(trunc(abs(MMSI))) == 9)
   
-  metadata$invalmmsi_aisids <- length(unique(AIScsvDF1$AIS_ID))
   metadata$invalmmsi__mmsis <- length(unique(AIScsvDF1$MMSI))
   metadata$invalmmsi__pts <- length(AIScsvDF1$MMSI)
   
   AIScsvDF <- AIScsvDF1 %>%
     filter(MMSI < 990000000) # Remove stationary aids to navigation
   
-  metadata$aton_aisids <- length(unique(AIScsvDF$AIS_ID))
   metadata$aton_mmsis <- length(unique(AIScsvDF$MMSI))
   metadata$aton_pts <- length(AIScsvDF$MMSI)
+  
+  # Remove original MMSI and switch to scrambled version 
+  AIScsvDF <- AIScsvDF  %>% left_join(scrambleids, by="MMSI") %>% select(-MMSI)
+  
+  # Create AIS_ID field
+  AIScsvDF <- AIScsvDF %>% add_column(AIS_ID = paste0(AIScsvDF$scramblemmsi,"-",substr(AIScsvDF$Time,1,8)))
 
   runtimes$dftime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
@@ -139,14 +137,14 @@ FWS.AIS <- function(csvList, flags, scrambleids){
     mutate(speed = distdiff/timediff)
   
   metadata$redund_aisids <- length(unique(AISspeed2$AIS_ID))
-  metadata$redund_mmsi <- length(unique(AISspeed2$MMSI))
-  metadata$redund_pts <- length(AISspeed2$MMSI)
+  metadata$redund_mmsi <- length(unique(AISspeed2$scramblemmsi))
+  metadata$redund_pts <- length(AISspeed2$scramblemmsi)
   
   AISspeed1 <- AISspeed2 %>% filter(speed < 100) %>% filter(!is.na(speed))
   
   metadata$speed_aisids <- length(unique(AISspeed1$AIS_ID))
-  metadata$speed_mmsi <- length(unique(AISspeed1$MMSI))
-  metadata$speed_pts <- length(AISspeed1$MMSI)
+  metadata$speed_mmsi <- length(unique(AISspeed1$scramblemmsi))
+  metadata$speed_pts <- length(AISspeed1$scramblemmsi)
   ##################################################################################################################
 
   AISspeed1$newseg <- ifelse(AISspeed1$timediff > 6, 1, 
@@ -161,8 +159,8 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
   
   metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
-  metadata$short_mmsi <- length(unique(AISspeed$MMSI))
-  metadata$short_pts <- length(AISspeed$MMSI)
+  metadata$short_mmsi <- length(unique(AISspeed$scramblemmsi))
+  metadata$short_pts <- length(AISspeed$scramblemmsi)
   
   runtimes$speedtime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
@@ -173,7 +171,7 @@ FWS.AIS <- function(csvList, flags, scrambleids){
     # create 1 line per AIS ID
     group_by(newsegid) %>%
     # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
-    summarize(MMSI=first(MMSI), AIS_ID=first(AIS_ID), SOG_median=median(SOG, na.rm=T), SOG_mean=mean(SOG, na.rm=T), do_union=FALSE, npoints=n()) %>%
+    summarize(scramblemmsi=first(scramblemmsi), AIS_ID=first(AIS_ID), SOG_median=median(SOG, na.rm=T), SOG_mean=mean(SOG, na.rm=T), do_union=FALSE, npoints=n()) %>%
     st_cast("LINESTRING") %>% 
     st_make_valid() %>% 
     group_by()
@@ -197,7 +195,7 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   
   AISlookup1 <- AIScsv %>%
     add_column(DimLength = AIScsv$Dimension_to_Bow+AIScsv$Dimension_to_stern, DimWidth = AIScsv$Dimension_to_port+AIScsv$Dimension_to_starboard) %>%
-    dplyr::select(-Dimension_to_Bow,-Dimension_to_stern,-Dimension_to_port,-Dimension_to_starboard) %>%
+    dplyr::select(-Dimension_to_Bow,-Dimension_to_stern,-Dimension_to_port,-Dimension_to_starboard, -Navigational_status, -SOG, -Longitude, -Latitude) %>%
     filter(Message_ID %in% c(5,24)) %>%
     filter(nchar(trunc(abs(MMSI))) > 8) 
   
@@ -213,35 +211,40 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   check <- multiplied[with(multiplied, order(MMSI, -mult)), ]
   AISlookup <- distinct(check, MMSI, .keep_all = TRUE) %>% select(-nums, -freq, -mult)
   
-  metadata$InSfNotLookup_aisids <- length(AISsf$AIS_ID[!(AISsf$AIS_ID %in% AISlookup$AIS_ID)])
-  metadata$InLookupNotSf_aisids <- length(AISlookup$AIS_ID[!(AISlookup$AIS_ID %in% AISsf$AIS_ID)])
+  metadata$InSfNotLookup_mmsis <- length(AISsf$MMSI[!(AISsf$MMSI %in% AISlookup$scramblemmsi)])
+  metadata$InLookupNotSf_mmsis <- length(AISlookup$MMSI[!(AISlookup$MMSI %in% AISsf$scramblemmsi)])
   
   # Add flag codes 
-  AISlookup <- AISlookup %>% mutate(CountryCode = as.numeric(substr(as.character(MMSI), 1,3))) %>% select(-Country) %>% left_join(flags, by=c("CountryCode" = "MID"))
+  AISlookup <- AISlookup %>% 
+    mutate(CountryCode = as.numeric(substr(as.character(MMSI), 1,3))) %>% 
+    select(-Country) %>% 
+    left_join(flags, by=c("CountryCode" = "MID")) %>% 
+    left_join(scrambleids, by="MMSI") %>% 
+    select(-MMSI)
   
   # step 2: join lookup table to the lines 
-  AISjoined <- AISsf %>%
-    left_join(AISlookup,by="MMSI")
+  AISjoined1 <- AISsf %>%
+    left_join(AISlookup,by="scramblemmsi")
   
   # step 3: split lines by ship type
   # link to ship type/numbers table: 
   # https://help.marinetraffic.com/hc/en-us/articles/205579997-What-is-the-significance-of-the-AIS-Shiptype-number-
-    AISjoined <- AISjoined %>%
+    AISjoined <- AISjoined1 %>%
       mutate(AIS_Type = case_when(
-      is.na(AISjoined$Ship_Type) ~ "Other",
-      substr(AISjoined$Ship_Type,1,2)==30 ~ "Fishing",
-      substr(AISjoined$Ship_Type,1,2)==52 ~ "Tug",
-      substr(AISjoined$Ship_Type,1,1)==6 ~ "Passenger",
-      substr(AISjoined$Ship_Type,1,2)==36 ~ "Sailing",
-      substr(AISjoined$Ship_Type,1,2)==37 ~ "Pleasure",
-      substr(AISjoined$Ship_Type,1,1)==7 ~ "Cargo",
-      substr(AISjoined$Ship_Type,1,1)==8 ~ "Tanker",
+      is.na(AISjoined1$Ship_Type) ~ "Other",
+      substr(AISjoined1$Ship_Type,1,2)==30 ~ "Fishing",
+      substr(AISjoined1$Ship_Type,1,2)==52 ~ "Tug",
+      substr(AISjoined1$Ship_Type,1,1)==6 ~ "Passenger",
+      substr(AISjoined1$Ship_Type,1,2)==36 ~ "Sailing",
+      substr(AISjoined1$Ship_Type,1,2)==37 ~ "Pleasure",
+      substr(AISjoined1$Ship_Type,1,1)==7 ~ "Cargo",
+      substr(AISjoined1$Ship_Type,1,1)==8 ~ "Tanker",
       # from trial and error, I think that this last "TRUE" serves as a catch-all, but I can't logically figure out why it works. -\__(%)__/-
       TRUE ~ "Other"
     ))  
   
     
-  nships <- AISjoined %>% st_drop_geometry() %>% group_by(AIS_Type) %>% summarize(n=length(unique(MMSI)))
+  nships <- AISjoined %>% st_drop_geometry() %>% group_by(AIS_Type) %>% summarize(n=length(unique(scramblemmsi)))
   metadata$ntank_mmsis <- nships$n[nships$AIS_Type == "Tanker"]
   metadata$ntug_mmsis <- nships$n[nships$AIS_Type == "Tug"]
   metadata$npass_mmsis <-nships$n[nships$AIS_Type == "Passenger"]
@@ -295,7 +298,7 @@ files <- paste0(filedr, list.files(filedr, pattern='.csv'))
 csvList <- files[27:28]
 
 flags <- read.csv("./FlagCodes.csv")
-scrambleids <- read.csv("./Data_Processed/ScrambleIDs.csv") %>% select(MMSI, scramblemmsi)
+scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% select(MMSI, scramblemmsi)
 
 ####################################################################
 ####################### PARALLELIZATION CODE ####################### 
