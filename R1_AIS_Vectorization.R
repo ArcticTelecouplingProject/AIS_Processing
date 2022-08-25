@@ -1,14 +1,14 @@
 ################################################################################
 # TITLE: AIS Vectorization Script
+#
 # PURPOSE: This script takes individual daily csv files from exactEarth, cleans
-  # data to remove erroneous points, and linearly interpolates to create daily
-  # transit segments for individual vessels in vector format. 
-# AUTHOR: Ben Sullender & Kelly Kapsar
+# data to remove erroneous points, and linearly interpolates to create daily
+# transit segments for individual vessels in vector format. 
+#
+# AUTHORS: Ben Sullender & Kelly Kapsar
 # CREATED: 2021
-# LAST UPDATED ON: 2022-08-09
+# LAST UPDATED ON: 2022-08-25
 # 
-# NOTE: Known issue with speed filter -- it does not remove first points if they 
-  # are errneous. 
 # NOTE 2: CODE DESIGNED TO RUN ON HPCC.
 ################################################################################
 
@@ -22,6 +22,7 @@ library(dplyr)
 library(tidyr)
 library(tibble)
 library(sf)
+library(purrr)
 library(foreach)
 library(doParallel)
 
@@ -116,13 +117,24 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   runtimes$dftime <- (proc.time() - start)[[3]]/60
   start <- proc.time()
   
+  # Identify and remove frost flowers
+  ff <- AIScsvDF %>% 
+    group_by(AIS_ID, Longitude, Latitude) %>% 
+    summarize(n=n()) %>% filter(n > 2) %>% 
+    mutate(tempid = paste0(AIS_ID, Longitude, Latitude))
+  
+  AISspeed4 <- AIScsvDF %>% 
+    mutate(tempid = paste0(AIS_ID, Longitude, Latitude)) %>% 
+    filter(!(tempid %in% ff$tempid))
+    
+  
   # Filter out points > 100 km/hr 
-  AISspeed3 <- AIScsvDF %>%
+  AISspeed3 <- AISspeed4 %>%
     mutate(Time = as.POSIXct(Time, format="%Y%m%d_%H%M%OS")) %>% 
     st_as_sf(coords=c("Longitude","Latitude"),crs=4326) %>%
     # project into Alaska Albers (or other CRS that doesn't create huge gap in mid-Bering with -180W and 180E)
     st_transform(crs=3338) %>%
-    mutate(speed = NA) %>% arrange(Time)
+    arrange(Time)
   
   # Calculate the euclidean speed between points
   # Implement speed filter of 100 km/hr 
@@ -145,11 +157,23 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   metadata$speed_aisids <- length(unique(AISspeed1$AIS_ID))
   metadata$speed_mmsi <- length(unique(AISspeed1$scramblemmsi))
   metadata$speed_pts <- length(AISspeed1$scramblemmsi)
-  ##################################################################################################################
+
+  # Create new segment ids for gaps greater than 60 km or 6 hrs
+  # Recalculate new distance and time difference now that speedy points have been removed 
+  AISspeed1 <- AISspeed1 %>% 
+    group_by(AIS_ID) %>%
+    arrange(AIS_ID, Time) %>% 
+    mutate(timediff = as.numeric(difftime(Time,lag(Time),units=c("hours"))),
+           distdiff = sqrt((lat-lag(lat))^2 + (long-lag(long))^2)/1000) %>% 
+    ungroup()
+  
 
   AISspeed1$newseg <- ifelse(AISspeed1$timediff > 6, 1, 
                             ifelse(AISspeed1$distdiff > 60, 1, 0))
-  AISspeed1$newseg[1] <- 1
+
+  AISspeed1$newseg[is.na(AISspeed1$newseg)] <- 1
+    
+    
   temp <- AISspeed1 %>% st_drop_geometry() %>% select(AIS_ID, newseg) %>% group_by(AIS_ID) %>% mutate(newseg = cumsum(newseg))
   
   AISspeed1$newsegid <- paste0(AISspeed1$AIS_ID, temp$newseg)
@@ -157,6 +181,7 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   shortids <- AISspeed1 %>% st_drop_geometry() %>% group_by(newsegid) %>% summarize(n=n()) %>% filter(n < 2)
   
   AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
+
   
   metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
   metadata$short_mmsi <- length(unique(AISspeed$scramblemmsi))
@@ -299,6 +324,18 @@ csvList <- files[27:28]
 
 flags <- read.csv("./FlagCodes.csv")
 scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% select(MMSI, scramblemmsi)
+
+# Frost flower segment
+# scrambleids$MMSI[scrambleids$scramblemmsi == "366840976"]
+# test <- AIScsv %>% filter(MMSI == "366932970")
+
+# Fishing (non-frost flower segment)
+# scrambleids$MMSI[scrambleids$scramblemmsi == "367553062"]
+# AIScsv <- AIScsv %>% filter(MMSI == "367184150")
+
+# Across alaska??? 
+# scrambleids$MMSI[scrambleids$scramblemmsi == "338288778"]
+# AIScsv <- AIScsv %>% filter(MMSI == "338189586")
 
 ####################################################################
 ####################### PARALLELIZATION CODE ####################### 
