@@ -7,7 +7,7 @@
 #
 # AUTHORS: Ben Sullender & Kelly Kapsar
 # CREATED: 2021
-# LAST UPDATED ON: 2022-08-25
+# LAST UPDATED ON: 2022-08-30
 # 
 # NOTE 2: CODE DESIGNED TO RUN ON HPCC.
 ################################################################################
@@ -30,7 +30,7 @@ library(doParallel)
 ##################### AIS PROCESSING FUNCTION ######################
 ####################################################################
 
-# INPUTS: A list of lists containing all daily csv file names for one year of AIS data.  
+# INPUTS: A list of lists containing all daily csv file names for one year of AIS data (organized by month).  
 ## Inner list = file paths/names for daily AIS csvs
 ## Outer list = a list of months 
 
@@ -39,15 +39,11 @@ library(doParallel)
 ## Text file with output information (number of unique ships, rows excluded, etc.)
 
 FWS.AIS <- function(csvList, flags, scrambleids){
-  # start timer 
+  # Start overall timer 
   starttime <- proc.time()
   
-  # clear variables
-  AIScsv <- NA
-  AIScsvDF <- NA
-  AISlookup <- NA
-  temp <- NA
-  
+  ##################### Initial data import ######################
+  # Start segment timer 
   start <- proc.time()
   
   # this will come in handy later. chars 28 to 34 = "yyyy-mm"
@@ -70,25 +66,28 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   
   AIScsv <- do.call(rbind , temp)
   
-  runtimes$importtime <- (proc.time() - start)[[3]]/60
-  start <- proc.time()
-  
   metadata$orig_MMSIs <- length(unique(AIScsv$MMSI))
   metadata$orig_pts <- length(AIScsv$MMSI)
+  
+  runtimes$importtime <- (proc.time() - start)[[3]]/60
+  
+  ##################### Data cleaning ######################
+    start <- proc.time()
   
   # Convert character columns to numeric as needed
   numcols <- c(1:2, 6:12, 14:17)
   AIScsv[,numcols] <- lapply(AIScsv[,numcols], as.numeric)
   
-  # create df
-  # we only care about lookup col, time, lat + long, and non-static messages
+  # Create df using only position messages (excluding type 27 which has increased location error)
+  # For more info on message types see: https://www.marinfo.gc.ca/e-nav/docs/list-of-ais-messages-en.php
   AIScsvDF3 <- AIScsv %>%
     dplyr::select(MMSI,Latitude,Longitude,Time,Message_ID,SOG) %>%
-    subset(!(Message_ID %in% c(5,24)))
+    subset(!(Message_ID %in% c(5,24, 27)))
   
   metadata$messid_mmsis <- length(unique(AIScsvDF3$MMSI))
   metadata$messid_pts <- length(AIScsvDF3$MMSI)
   
+  # Remove invalid lat/long values
   AIScsvDF2 <- AIScsvDF3 %>%
     filter(!is.na(Latitude)) %>%
     filter(!is.na(Longitude)) 
@@ -96,14 +95,16 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   metadata$invallatlon__mmsis <- length(unique(AIScsvDF2$MMSI))
   metadata$invallatlon__pts <- length(AIScsvDF2$MMSI)
   
+  # Remove invalid MMSIs
   AIScsvDF1 <- AIScsvDF2 %>%
     filter(nchar(trunc(abs(MMSI))) == 9)
   
   metadata$invalmmsi__mmsis <- length(unique(AIScsvDF1$MMSI))
   metadata$invalmmsi__pts <- length(AIScsvDF1$MMSI)
   
+  # Remove stationary aids to navigation
   AIScsvDF <- AIScsvDF1 %>%
-    filter(MMSI < 990000000) # Remove stationary aids to navigation
+    filter(MMSI < 990000000) 
   
   metadata$aton_mmsis <- length(unique(AIScsvDF$MMSI))
   metadata$aton_pts <- length(AIScsvDF$MMSI)
@@ -113,11 +114,9 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   
   # Create AIS_ID field
   AIScsvDF <- AIScsvDF %>% add_column(AIS_ID = paste0(AIScsvDF$scramblemmsi,"-",substr(AIScsvDF$Time,1,8)))
-
-  runtimes$dftime <- (proc.time() - start)[[3]]/60
-  start <- proc.time()
   
-  # Identify and remove frost flowers
+  # Identify and remove frost flowers 
+  # (i.e. multiple messages from the same exact location sporadically transmitted throughout the day)
   ff <- AIScsvDF %>% 
     group_by(AIS_ID, Longitude, Latitude) %>% 
     summarize(n=n()) %>% filter(n > 2) %>% 
@@ -127,8 +126,12 @@ FWS.AIS <- function(csvList, flags, scrambleids){
     mutate(tempid = paste0(AIS_ID, Longitude, Latitude)) %>% 
     filter(!(tempid %in% ff$tempid))
     
+  runtimes$dftime <- (proc.time() - start)[[3]]/60
   
-  # Filter out points > 100 km/hr 
+  ##################### Speed filtering ######################
+  start <- proc.time()
+  
+  # Make dataframe into spatial object 
   AISspeed3 <- AISspeed4 %>%
     mutate(Time = as.POSIXct(Time, format="%Y%m%d_%H%M%OS")) %>% 
     st_as_sf(coords=c("Longitude","Latitude"),crs=4326) %>%
@@ -137,7 +140,7 @@ FWS.AIS <- function(csvList, flags, scrambleids){
     arrange(Time)
   
   # Calculate the euclidean speed between points
-  # Implement speed filter of 100 km/hr 
+  # Also remove successive duplicate points (i.e., same time stamp and/or same location)
   AISspeed3[, c("long", "lat")] <- st_coordinates(AISspeed3)
   AISspeed2 <- AISspeed3 %>% 
     group_by(AIS_ID) %>%
@@ -152,6 +155,7 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   metadata$redund_mmsi <- length(unique(AISspeed2$scramblemmsi))
   metadata$redund_pts <- length(AISspeed2$scramblemmsi)
   
+  # Implement speed filter of 100 km/hr (also remove NA speed)
   AISspeed1 <- AISspeed2 %>% filter(speed < 100) %>% filter(!is.na(speed))
   
   metadata$speed_aisids <- length(unique(AISspeed1$AIS_ID))
@@ -171,23 +175,22 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   AISspeed1$newseg <- ifelse(AISspeed1$timediff > 6, 1, 
                             ifelse(AISspeed1$distdiff > 60, 1, 0))
 
+  # Create new ID for each segment 
   AISspeed1$newseg[is.na(AISspeed1$newseg)] <- 1
-    
-    
   temp <- AISspeed1 %>% st_drop_geometry() %>% select(AIS_ID, newseg) %>% group_by(AIS_ID) %>% mutate(newseg = cumsum(newseg))
+    AISspeed1$newsegid <- paste0(AISspeed1$AIS_ID, temp$newseg)
   
-  AISspeed1$newsegid <- paste0(AISspeed1$AIS_ID, temp$newseg)
-  
+  # Remove segments with only one point (can't be made into lines)
   shortids <- AISspeed1 %>% st_drop_geometry() %>% group_by(newsegid) %>% summarize(n=n()) %>% filter(n < 2)
-  
-  AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
+    AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
 
-  
   metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
   metadata$short_mmsi <- length(unique(AISspeed$scramblemmsi))
   metadata$short_pts <- length(AISspeed$scramblemmsi)
   
   runtimes$speedtime <- (proc.time() - start)[[3]]/60
+  
+  ##################### Vectorization ######################
   start <- proc.time()
   
   # create sf lines by sorted / grouped points
@@ -196,7 +199,12 @@ FWS.AIS <- function(csvList, flags, scrambleids){
     # create 1 line per AIS ID
     group_by(newsegid) %>%
     # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
-    summarize(scramblemmsi=first(scramblemmsi), AIS_ID=first(AIS_ID), SOG_median=median(SOG, na.rm=T), SOG_mean=mean(SOG, na.rm=T), do_union=FALSE, npoints=n()) %>%
+    summarize(scramblemmsi=first(scramblemmsi), 
+              AIS_ID=first(AIS_ID), 
+              SOG_median=median(SOG, na.rm=T), 
+              SOG_mean=mean(SOG, na.rm=T), 
+              do_union=FALSE, 
+              npoints=n()) %>%
     st_cast("LINESTRING") %>% 
     st_make_valid() %>% 
     group_by()
@@ -204,28 +212,35 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   # Figure out which rows aren't LINESTRINGS and remove from data 
   notlines <- AISsf[which(st_geometry_type(AISsf) != "LINESTRING"),]
   AISsf <- AISsf[which(st_geometry_type(AISsf) == "LINESTRING"),]
+  
   metadata$NotLine_aisids <- length(notlines$AIS_ID)
   
-  ##################################################################################################################
   runtimes$linetime <- (proc.time() - start)[[3]]/60
+  
+  ##################### Join position information with static information ######################
   start <- proc.time()
   
   # Calculate total distance travelled
   AISsf$length_km <- as.numeric(st_length(AISsf)/1000)
 
-  # create lookup table
-  # we only care about 7 columns in total: lookup col (MMSI + date), name + IMO (in case we have duplicates / want to do an IMO-based lookup in the future),
-  #     ship type, and size (in 3 cols: width, length, Draught)
-  #     I'm including Destination and Country because that would be dope! We could do stuff with innocent passage if that's well populated.
-  
+  # create lookup table from static messages
   AISlookup1 <- AIScsv %>%
-    add_column(DimLength = AIScsv$Dimension_to_Bow+AIScsv$Dimension_to_stern, DimWidth = AIScsv$Dimension_to_port+AIScsv$Dimension_to_starboard) %>%
-    dplyr::select(-Dimension_to_Bow,-Dimension_to_stern,-Dimension_to_port,-Dimension_to_starboard, -Navigational_status, -SOG, -Longitude, -Latitude) %>%
+    add_column(DimLength = AIScsv$Dimension_to_Bow+AIScsv$Dimension_to_stern, 
+               DimWidth = AIScsv$Dimension_to_port+AIScsv$Dimension_to_starboard) %>%
+    dplyr::select(-Dimension_to_Bow,
+                  -Dimension_to_stern,
+                  -Dimension_to_port,
+                  -Dimension_to_starboard, 
+                  -Navigational_status, 
+                  -SOG, 
+                  -Longitude, 
+                  -Latitude) %>%
     filter(Message_ID %in% c(5,24)) %>%
-    filter(nchar(trunc(abs(MMSI))) > 8) 
+    filter(nchar(trunc(abs(MMSI))) == 9) 
   
-  # This code takes all the static messages from a given month and downweights messages with a ship 
-  # type of 0 or NA. It then takes the static messages and keeps the message with the heighest weight
+  # Identify "best" static message from a given day 
+  # Take all the static messages from a given month and down weight messages with a ship 
+  # type of 0 or NA. Take the static messages and keeps the message with the highest weight
   # Code adapted from: https://stackoverflow.com/questions/72650475/take-unique-rows-in-r-but-keep-most-common-value-of-a-column-and-use-hierarchy
   wghts <- data.frame(poss = c(0, NA), nums = c(-10, -10))
   matched <- left_join(AISlookup1, wghts, by = c("Ship_Type"= "poss"))
@@ -239,7 +254,8 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   metadata$InSfNotLookup_mmsis <- length(AISsf$MMSI[!(AISsf$MMSI %in% AISlookup$scramblemmsi)])
   metadata$InLookupNotSf_mmsis <- length(AISlookup$MMSI[!(AISlookup$MMSI %in% AISsf$scramblemmsi)])
   
-  # Add flag codes 
+  # Add flag codes (based on original MMSI) 
+  # and join with scramblemmsi
   AISlookup <- AISlookup %>% 
     mutate(CountryCode = as.numeric(substr(as.character(MMSI), 1,3))) %>% 
     select(-Country) %>% 
@@ -247,11 +263,11 @@ FWS.AIS <- function(csvList, flags, scrambleids){
     left_join(scrambleids, by="MMSI") %>% 
     select(-MMSI)
   
-  # step 2: join lookup table to the lines 
+  # Join lookup table to the lines based on scramble mmsi
   AISjoined1 <- AISsf %>%
     left_join(AISlookup,by="scramblemmsi")
   
-  # step 3: split lines by ship type
+  # Split lines by ship type
   # link to ship type/numbers table: 
   # https://help.marinetraffic.com/hc/en-us/articles/205579997-What-is-the-significance-of-the-AIS-Shiptype-number-
     AISjoined <- AISjoined1 %>%
@@ -279,8 +295,11 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   metadata$ncargo_mmsis <- nships$n[nships$AIS_Type == "Cargo"]
   metadata$nother_mmsis <- nships$n[nships$AIS_Type == "Other"]
   metadata$ntotal_mmsis <- sum(nships$n)
+  metadata$totallength_km <- sum(AISjoined$length_km)
   
   runtimes$jointime <- (proc.time() - start)[[3]]/60
+  
+  ##################### Save outputs ######################
   start <- proc.time()
   
   # Loop through each ship type, rasterize, and save shp file as well 
@@ -315,7 +334,7 @@ return(runtimes)
 #########################################################
 
 # Pull up list of AIS files
-filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2015/"
+filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2020/"
 
 files <- paste0(filedr, list.files(filedr, pattern='.csv'))
 
