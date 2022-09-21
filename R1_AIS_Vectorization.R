@@ -38,7 +38,7 @@ library(doParallel)
 ## Monthly shapefiles for each ship type containing vectorized daily ship transit segments
 ## Text file with output information (number of unique ships, rows excluded, etc.)
 
-FWS.AIS <- function(csvList, flags, scrambleids){
+FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   # Start overall timer 
   starttime <- proc.time()
   
@@ -133,7 +133,7 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   
   # Make dataframe into spatial object 
   AISspeed3 <- AISspeed4 %>%
-    mutate(Time = as.POSIXct(Time, format="%Y%m%d_%H%M%OS")) %>% 
+    mutate(Time = as.POSIXct(Time, format="%Y%m%d_%H%M%OS", tz="GMT")) %>% # S-AIS are in UTC with is GMT 
     st_as_sf(coords=c("Longitude","Latitude"),crs=4326) %>%
     # project into Alaska Albers (or other CRS that doesn't create huge gap in mid-Bering with -180W and 180E)
     st_transform(crs=3338) %>%
@@ -182,7 +182,7 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   
   # Remove segments with only one point (can't be made into lines)
   shortids <- AISspeed1 %>% st_drop_geometry() %>% group_by(newsegid) %>% summarize(n=n()) %>% filter(n < 2)
-    AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
+  AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
 
   metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
   metadata$short_mmsi <- length(unique(AISspeed$scramblemmsi))
@@ -190,30 +190,64 @@ FWS.AIS <- function(csvList, flags, scrambleids){
   
   runtimes$speedtime <- (proc.time() - start)[[3]]/60
   
-  ##################### Vectorization ######################
+
+  # Calculate whether points are occurring during daytime or at night 
+  if(daynight==TRUE){
+    temp <- st_coordinates(st_transform(AISspeed, 4326))
+    sunrise <- maptools::sunriset(temp, dateTime=AISspeed$Time, direction="sunrise", POSIXct.out=TRUE)
+    sunset <- maptools::sunriset(temp, dateTime=AISspeed$Time, direction="sunset", POSIXct.out=TRUE)
+    AISspeed$timeofday <- ifelse(AISspeed$Time > sunrise$time & AISspeed$Time < sunset$time, "day","night")
+    AISspeed$timeofday <- as.factor(AISspeed$timeofday)
+  }
+
+    ##################### Vectorization ######################
   start <- proc.time()
   
   # create sf lines by sorted / grouped points
-  AISsf <- AISspeed %>%
-    arrange(Time) %>%
-    # create 1 line per AIS ID
-    group_by(newsegid) %>%
-    # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
-    summarize(scramblemmsi=first(scramblemmsi), 
-              AIS_ID=first(AIS_ID), 
-              SOG_median=median(SOG, na.rm=T), 
-              SOG_mean=mean(SOG, na.rm=T), 
-              do_union=FALSE, 
-              npoints=n()) %>%
-    st_cast("LINESTRING") %>% 
-    st_make_valid() %>% 
-    group_by()
-
+  if(daynight==TRUE){
+    AISsftemp <- AISspeed %>%
+      arrange(Time) %>%
+      # create 1 line per AIS ID
+      group_by(newsegid, timeofday) %>%
+      # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
+      summarize(scramblemmsi=first(scramblemmsi), 
+                AIS_ID=first(AIS_ID), 
+                SOG_median=median(SOG, na.rm=T), 
+                SOG_mean=mean(SOG, na.rm=T), 
+                do_union=FALSE, 
+                npoints=n())
+    AISsftempnew <- AISsftemp[AISsftemp$npoints > 1,]
+    
+    metadata$daynightshort_aisids <- length(unique(AISsftempnew$AIS_ID))
+    metadata$daynightshort_mmsi <- length(unique(AISsftempnew$scramblemmsi))
+    
+    AISsf <- AISsftempnew %>% 
+      st_cast("LINESTRING") %>% 
+      st_make_valid() %>% 
+      ungroup()
+  }
+  if(daynight==FALSE){
+    AISsf <- AISspeed %>%
+      arrange(Time) %>%
+      # create 1 line per AIS ID
+      group_by(newsegid) %>%
+      # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
+      summarize(scramblemmsi=first(scramblemmsi), 
+                AIS_ID=first(AIS_ID), 
+                SOG_median=median(SOG, na.rm=T), 
+                SOG_mean=mean(SOG, na.rm=T), 
+                do_union=FALSE, 
+                npoints=n()) %>%
+      st_cast("LINESTRING") %>% 
+      st_make_valid() %>% 
+      ungroup()
+  }
   # Figure out which rows aren't LINESTRINGS and remove from data 
   notlines <- AISsf[which(st_geometry_type(AISsf) != "LINESTRING"),]
   AISsf <- AISsf[which(st_geometry_type(AISsf) == "LINESTRING"),]
   
-  metadata$NotLine_aisids <- length(notlines$AIS_ID)
+  metadata$NotLine_aisids <- length(AISsf$AIS_ID)
+  metadata$NotLine_mmsis <- length(AISsf$scramblemmsi)
   
   runtimes$linetime <- (proc.time() - start)[[3]]/60
   
@@ -334,7 +368,7 @@ return(runtimes)
 #########################################################
 
 # Pull up list of AIS files
-filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2020/"
+filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2015/"
 
 files <- paste0(filedr, list.files(filedr, pattern='.csv'))
 
@@ -343,6 +377,8 @@ csvList <- files[27:28]
 
 flags <- read.csv("./FlagCodes.csv")
 scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% select(MMSI, scramblemmsi)
+
+FWS.AIS(csvList, flags, scrambleids, daynight=TRUE)
 
 # Frost flower segment
 # scrambleids$MMSI[scrambleids$scramblemmsi == "366840976"]
