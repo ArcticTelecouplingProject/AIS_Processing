@@ -47,7 +47,10 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   start <- proc.time()
   
   # this will come in handy later. chars 28 to 34 = "yyyy-mm"
-  MoName <- substr(csvList[[1]][1],77, 83)
+  print(csvList[[1]][1])
+  
+  MoName <- substr(csvList[[1]][1],45, 51) # HPCC
+  # MoName <- substr(csvList[[1]][1],77, 83) # MY COMPUTER
   yr <- substr(MoName, 1, 4) 
   mnth <- substr(MoName, 6, 7)
   print(paste("Processing",yr, mnth))
@@ -62,58 +65,62 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
                                  "character", rep("NULL", 6), "character", "NULL", rep("character",8),
                                  "NULL", "character", "NULL", "character", "NULL", rep("character", 2), rep("NULL", 109)
                   ))
-  
-  
+
   AIScsv <- do.call(rbind , temp)
-  
+
   metadata$orig_MMSIs <- length(unique(AIScsv$MMSI))
   metadata$orig_pts <- length(AIScsv$MMSI)
   
   runtimes$importtime <- (proc.time() - start)[[3]]/60
   
+  # print(paste("Imported: ",yr, mnth))
   ##################### Data cleaning ######################
-    start <- proc.time()
+  start <- proc.time()
   
   # Convert character columns to numeric as needed
   numcols <- c(1:2, 6:12, 14:17)
   AIScsv[,numcols] <- lapply(AIScsv[,numcols], as.numeric)
   
+  # print(paste("Numeric cols: ",yr, mnth))
   # Create df using only position messages (excluding type 27 which has increased location error)
   # For more info on message types see: https://www.marinfo.gc.ca/e-nav/docs/list-of-ais-messages-en.php
-  AIScsvDF3 <- AIScsv %>%
+  AIScsvDF5 <- AIScsv %>%
     dplyr::select(MMSI,Latitude,Longitude,Time,Message_ID,SOG) %>%
     subset(!(Message_ID %in% c(5,24, 27)))
   
-  metadata$messid_mmsis <- length(unique(AIScsvDF3$MMSI))
-  metadata$messid_pts <- length(AIScsvDF3$MMSI)
+  metadata$messid_mmsis <- length(unique(AIScsvDF5$MMSI))
+  metadata$messid_pts <- length(AIScsvDF5$MMSI)
   
+  # print(paste("Position messages: ",yr, mnth))
   # Remove invalid lat/long values
-  AIScsvDF2 <- AIScsvDF3 %>%
+  AIScsvDF4 <- AIScsvDF5 %>%
     filter(!is.na(Latitude)) %>%
     filter(!is.na(Longitude)) 
   
-  metadata$invallatlon__mmsis <- length(unique(AIScsvDF2$MMSI))
-  metadata$invallatlon__pts <- length(AIScsvDF2$MMSI)
+  metadata$invallatlon__mmsis <- length(unique(AIScsvDF4$MMSI))
+  metadata$invallatlon__pts <- length(AIScsvDF4$MMSI)
   
+  # print(paste("Inval lat/lon: ",yr, mnth))
   # Remove invalid MMSIs
-  AIScsvDF1 <- AIScsvDF2 %>%
-    filter(nchar(trunc(abs(MMSI))) == 9)
+  AIScsvDF3 <- AIScsvDF4 %>%
+    dplyr::filter(nchar(trunc(abs(MMSI))) == 9)
   
-  metadata$invalmmsi__mmsis <- length(unique(AIScsvDF1$MMSI))
-  metadata$invalmmsi__pts <- length(AIScsvDF1$MMSI)
+  metadata$invalmmsi__mmsis <- length(unique(AIScsvDF3$MMSI))
+  metadata$invalmmsi__pts <- length(AIScsvDF3$MMSI)
   
+  # print(paste("Inval MMSI: ",yr, mnth))
   # Remove stationary aids to navigation
-  AIScsvDF <- AIScsvDF1 %>%
-    filter(MMSI < 990000000) 
+  AIScsvDF2 <- AIScsvDF3 %>%
+    dplyr::filter(MMSI < 990000000) 
   
-  metadata$aton_mmsis <- length(unique(AIScsvDF$MMSI))
-  metadata$aton_pts <- length(AIScsvDF$MMSI)
-  
+  metadata$aton_mmsis <- length(unique(AIScsvDF2$MMSI))
+  metadata$aton_pts <- length(AIScsvDF2$MMSI)
+
   # Remove original MMSI and switch to scrambled version 
-  AIScsvDF <- AIScsvDF  %>% left_join(scrambleids, by="MMSI") %>% select(-MMSI)
+  AIScsvDF1 <- AIScsvDF2  %>% left_join(scrambleids, by="MMSI") %>% dplyr::select(-MMSI)
   
   # Create AIS_ID field
-  AIScsvDF <- AIScsvDF %>% add_column(AIS_ID = paste0(AIScsvDF$scramblemmsi,"-",substr(AIScsvDF$Time,1,8)))
+  AIScsvDF <- AIScsvDF1 %>% add_column(AIS_ID = paste0(AIScsvDF1$scramblemmsi,"-",substr(AIScsvDF1$Time,1,8)))
   
   # Identify and remove frost flowers 
   # (i.e. multiple messages from the same exact location sporadically transmitted throughout the day)
@@ -128,6 +135,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
     
   runtimes$dftime <- (proc.time() - start)[[3]]/60
   
+  print(paste("Finished Cleaning ",yr, mnth))
   ##################### Speed filtering ######################
   start <- proc.time()
   
@@ -156,7 +164,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   metadata$redund_pts <- length(AISspeed2$scramblemmsi)
   
   # Implement speed filter of 100 km/hr (also remove NA speed)
-  AISspeed1 <- AISspeed2 %>% filter(speed < 100) %>% filter(!is.na(speed))
+  AISspeed1 <- AISspeed2 %>% dplyr::filter(speed < 100) %>% dplyr::filter(!is.na(speed))
   
   metadata$speed_aisids <- length(unique(AISspeed1$AIS_ID))
   metadata$speed_mmsi <- length(unique(AISspeed1$scramblemmsi))
@@ -177,11 +185,11 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
 
   # Create new ID for each segment 
   AISspeed1$newseg[is.na(AISspeed1$newseg)] <- 1
-  temp <- AISspeed1 %>% st_drop_geometry() %>% select(AIS_ID, newseg) %>% group_by(AIS_ID) %>% mutate(newseg = cumsum(newseg))
-    AISspeed1$newsegid <- paste0(AISspeed1$AIS_ID, temp$newseg)
+  temp <- AISspeed1 %>% st_drop_geometry() %>% dplyr::select(AIS_ID, newseg) %>% group_by(AIS_ID) %>% mutate(newseg = cumsum(newseg))
+  AISspeed1$newsegid <- paste0(AISspeed1$AIS_ID, temp$newseg)
   
   # Remove segments with only one point (can't be made into lines)
-  shortids <- AISspeed1 %>% st_drop_geometry() %>% group_by(newsegid) %>% summarize(n=n()) %>% filter(n < 2)
+  shortids <- AISspeed1 %>% st_drop_geometry() %>% group_by(newsegid) %>% summarize(n=n()) %>% dplyr::filter(n < 2)
   AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
 
   metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
@@ -189,18 +197,20 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   metadata$short_pts <- length(AISspeed$scramblemmsi)
   
   runtimes$speedtime <- (proc.time() - start)[[3]]/60
-  
 
   # Calculate whether points are occurring during daytime or at night 
   if(daynight==TRUE){
     temp <- st_coordinates(st_transform(AISspeed, 4326))
+    print(paste("Spatial ",yr, mnth))
     sunrise <- maptools::sunriset(temp, dateTime=AISspeed$Time, direction="sunrise", POSIXct.out=TRUE)
     sunset <- maptools::sunriset(temp, dateTime=AISspeed$Time, direction="sunset", POSIXct.out=TRUE)
+    print(paste("Sunrise",yr, mnth))
     AISspeed$timeofday <- ifelse(AISspeed$Time > sunrise$time & AISspeed$Time < sunset$time, "day","night")
     AISspeed$timeofday <- as.factor(AISspeed$timeofday)
   }
-
-    ##################### Vectorization ######################
+  
+  print(paste("Finished Speed filter ",yr, mnth))
+  ##################### Vectorization ######################
   start <- proc.time()
   
   # create sf lines by sorted / grouped points
@@ -251,6 +261,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   
   runtimes$linetime <- (proc.time() - start)[[3]]/60
   
+  print(paste("Finished Vectorization ",yr, mnth))
   ##################### Join position information with static information ######################
   start <- proc.time()
   
@@ -283,7 +294,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   multiplied <- distinct(matched, MMSI, Ship_Type, .keep_all = TRUE)
   multiplied$mult <- multiplied$nums * multiplied$freq
   check <- multiplied[with(multiplied, order(MMSI, -mult)), ]
-  AISlookup <- distinct(check, MMSI, .keep_all = TRUE) %>% select(-nums, -freq, -mult)
+  AISlookup <- distinct(check, MMSI, .keep_all = TRUE) %>% dplyr::select(-nums, -freq, -mult)
   
   metadata$InSfNotLookup_mmsis <- length(AISsf$MMSI[!(AISsf$MMSI %in% AISlookup$scramblemmsi)])
   metadata$InLookupNotSf_mmsis <- length(AISlookup$MMSI[!(AISlookup$MMSI %in% AISsf$scramblemmsi)])
@@ -292,10 +303,10 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   # and join with scramblemmsi
   AISlookup <- AISlookup %>% 
     mutate(CountryCode = as.numeric(substr(as.character(MMSI), 1,3))) %>% 
-    select(-Country) %>% 
+    dplyr::select(-Country) %>% 
     left_join(flags, by=c("CountryCode" = "MID")) %>% 
     left_join(scrambleids, by="MMSI") %>% 
-    select(-MMSI)
+    dplyr::select(-MMSI)
   
   # Join lookup table to the lines based on scramble mmsi
   AISjoined1 <- AISsf %>%
@@ -333,6 +344,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   
   runtimes$jointime <- (proc.time() - start)[[3]]/60
   
+  print(paste("Finished Static/Position Join ",yr, mnth))
   ##################### Save outputs ######################
   start <- proc.time()
   
@@ -346,7 +358,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
 
           # Save data in vector format
           if(length(AISfilteredType$newsegid > 0)){
-            write_sf(AISfilteredType,paste0("./Data_Processed/Tracks_",MoName,"-",allTypes[k],".shp"))
+            write_sf(AISfilteredType,paste0("../Data_Processed/Tracks_DayNight", daynight, "_",MoName,"-",allTypes[k],".shp"))
           }
   }
   
@@ -356,9 +368,9 @@ runtimes$vectortime <- (proc.time() - start)[[3]]/60
 runtime <- proc.time() - starttime 
 runtimes$runtime_min <- runtime[[3]]/60 
 
-write.csv(metadata, paste0("./Data_Processed/Metadata/Metadata_",MoName,".csv"))
+write.csv(metadata, paste0("../Data_Processed/Metadata/Metadata_DayNight", daynight, "_", MoName,".csv"))
 
-write.csv(runtimes, paste0("./Data_Processed/Metadata/Runtimes_",MoName,".csv"))
+write.csv(runtimes, paste0("../Data_Processed/Metadata/Runtimes_DayNight", daynight, "_",MoName,".csv"))
 print(runtimes)
 return(runtimes)
 }
@@ -367,18 +379,18 @@ return(runtimes)
 ####################### TEST CODE ####################### 
 #########################################################
 
-# Pull up list of AIS files
-filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2015/"
+# # Pull up list of AIS files
+# filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2015/"
+# 
+# files <- paste0(filedr, list.files(filedr, pattern='.csv'))
+# 
+# # Separate file names into monthly lists
+# csvList <- files[27:28]
+# 
+# flags <- read.csv("./FlagCodes.csv")
+# scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% dplyr::select(MMSI, scramblemmsi)
 
-files <- paste0(filedr, list.files(filedr, pattern='.csv'))
-
-# Separate file names into monthly lists
-csvList <- files[27:28]
-
-flags <- read.csv("./FlagCodes.csv")
-scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% select(MMSI, scramblemmsi)
-
-FWS.AIS(csvList, flags, scrambleids, daynight=TRUE)
+# FWS.AIS(csvList, flags, scrambleids, daynight=TRUE)
 
 # Frost flower segment
 # scrambleids$MMSI[scrambleids$scramblemmsi == "366840976"]
@@ -397,7 +409,7 @@ FWS.AIS(csvList, flags, scrambleids, daynight=TRUE)
 ####################################################################
 
 # Pull up list of AIS files
-files <- paste0("../Data_Raw/2020/", list.files("../Data_Raw/2020", pattern='.csv'))
+files <- paste0("../Data_Raw/2015/", list.files("../Data_Raw/2015", pattern='.csv'))
 
 # Separate file names into monthly lists
 jan <- files[grepl("-01-", files)]
@@ -417,7 +429,10 @@ dec <- files[grepl("-12-", files)]
 csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
 
 # Import flag code reference list
-flags <- read.csv("./FlagCodes.csv")
+flags <- read.csv("../Data_Raw/FlagCodes.csv")
+
+# Import scramblemmsi codes
+scrambleids <- read.csv("../Data_Raw/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% dplyr::select(MMSI, scramblemmsi)
 
 ## MSU HPCC: https://wiki.hpcc.msu.edu/display/ITH/R+workshop+tutorial#Rworkshoptutorial-Submittingparalleljobstotheclusterusing{doParallel}:singlenode,multiplecores
 # Request a single node (this uses the "multicore" functionality)
@@ -430,8 +445,9 @@ res=list()
 # foreach and %dopar% work together to implement the parallelization
 # note that you have to tell each core what packages you need (another reason to minimize library use), so it can pull those over
 # I'm using tidyverse since it combines dplyr and tidyr into one library (I think)
-res=foreach(i=1:12,.packages=c("maptools", "rgdal", "dplyr", "tidyr", "tibble", "stars", "raster", "foreach", "doParallel", "data.table"),
-            .errorhandling='pass',.verbose=T,.multicombine=TRUE) %dopar% FWS.AIS(csvList=csvsByMonth[[i]], flags=flags)
+res=foreach(i=1:12,.packages=c("maptools", "rgdal", "dplyr", "tidyr", "tibble", "stars", "raster", "foreach","purrr", "doParallel", "data.table"),
+            .errorhandling='pass',.verbose=T,.multicombine=TRUE) %dopar% 
+  FWS.AIS(csvList=csvsByMonth[[i]], flags=flags, scrambleids=scrambleids, daynight=TRUE)
 # lapply(csvsByMonth, FWS.AIS)
 
 # Elapsed time and running information
