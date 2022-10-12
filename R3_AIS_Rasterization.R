@@ -67,14 +67,20 @@ path <- "D:/AIS_V2_DayNight_60km6hrgap/Vector/"
 
 files <- list.files(path, pattern='.shp')
 
+# ID save destination and make list of raster file names already within it
 savedsn <- "D:/AIS_V2_DayNight_60km6hrgap/Raster/"
+saverasters <- list.files(savedsn, pattern='.tif.aux')
+saverasters <- substr(saverasters, 11,nchar(saverasters)-17)
 
-# the "-4" part gets rid of ".shp"
+
+# Get file names for rasters 
 inS <- substr(files,1,nchar(files)-4)
 
+# Remove rasters that are already saved 
+inSnew <- inS[!substr(inS, 8,nchar(inS)) %in% saverasters]
 
 start <- proc.time()
-lapply(inS, function(x){AIS.Rasta(filename= paste0(path, x, ".shp"), vectorName=x, savedsn=savedsn, cellsize=25000, nightonly=FALSE)}) 
+lapply(inSnew, function(x){AIS.Rasta(filename= paste0(path, x, ".shp"), vectorName=x, savedsn=savedsn, cellsize=25000, nightonly=FALSE)}) 
 tottime <- proc.time()-start
 browseURL("https://www.youtube.com/watch?v=AZQxH_8raCI&ab_channel=worldslover234")
 
