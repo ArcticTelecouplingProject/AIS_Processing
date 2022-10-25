@@ -179,13 +179,28 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
            distdiff = sqrt((lat-lag(lat))^2 + (long-lag(long))^2)/1000) %>% 
     ungroup()
   
+  # Calculate whether points are occurring during daytime or at night 
+  if(daynight==TRUE){
+    temp <- st_coordinates(st_transform(AISspeed1, 4326))
+    print(paste("Spatial ",yr, mnth))
+    sunrise <- maptools::sunriset(temp, dateTime=AISspeed1$Time, direction="sunrise", POSIXct.out=TRUE)
+    sunset <- maptools::sunriset(temp, dateTime=AISspeed1$Time, direction="sunset", POSIXct.out=TRUE)
+    print(paste("Sunrise",yr, mnth))
+    AISspeed1$timeofday <- ifelse(AISspeed1$Time > sunrise$time & AISspeed1$Time < sunset$time, "day","night")
+    AISspeed1$timeofday <- as.factor(AISspeed1$timeofday)
+  }
+  
 
   AISspeed1$newseg <- ifelse(AISspeed1$timediff > 6, 1, 
                             ifelse(AISspeed1$distdiff > 60, 1, 0))
 
   # Create new ID for each segment 
   AISspeed1$newseg[is.na(AISspeed1$newseg)] <- 1
-  temp <- AISspeed1 %>% st_drop_geometry() %>% dplyr::select(AIS_ID, newseg) %>% group_by(AIS_ID) %>% mutate(newseg = cumsum(newseg))
+  temp <- AISspeed1 %>% 
+    st_drop_geometry() %>% 
+    dplyr::select(AIS_ID, newseg, timeofday) %>% 
+    group_by(AIS_ID) %>% 
+    mutate(newseg = cumsum(newseg))
   AISspeed1$newsegid <- paste0(AISspeed1$AIS_ID, temp$newseg)
   
   # Remove segments with only one point (can't be made into lines)
@@ -197,17 +212,6 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   metadata$short_pts <- length(AISspeed$scramblemmsi)
   
   runtimes$speedtime <- (proc.time() - start)[[3]]/60
-
-  # Calculate whether points are occurring during daytime or at night 
-  if(daynight==TRUE){
-    temp <- st_coordinates(st_transform(AISspeed, 4326))
-    print(paste("Spatial ",yr, mnth))
-    sunrise <- maptools::sunriset(temp, dateTime=AISspeed$Time, direction="sunrise", POSIXct.out=TRUE)
-    sunset <- maptools::sunriset(temp, dateTime=AISspeed$Time, direction="sunset", POSIXct.out=TRUE)
-    print(paste("Sunrise",yr, mnth))
-    AISspeed$timeofday <- ifelse(AISspeed$Time > sunrise$time & AISspeed$Time < sunset$time, "day","night")
-    AISspeed$timeofday <- as.factor(AISspeed$timeofday)
-  }
   
   print(paste("Finished Speed filter ",yr, mnth))
   ##################### Vectorization ######################
@@ -218,9 +222,12 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
     AISsftemp <- AISspeed %>%
       arrange(Time) %>%
       # create 1 line per AIS ID
-      group_by(newsegid, timeofday) %>%
+      group_by(newsegid) %>%
       # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
       summarize(scramblemmsi=first(scramblemmsi), 
+                timeofday=first(timeofday),
+                time_start = as.character(first(Time)), 
+                time_end = as.character(last(Time)),
                 AIS_ID=first(AIS_ID), 
                 SOG_median=median(SOG, na.rm=T), 
                 SOG_mean=mean(SOG, na.rm=T), 
@@ -243,11 +250,14 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
       group_by(newsegid) %>%
       # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
       summarize(scramblemmsi=first(scramblemmsi), 
+                timeofday=first(timeofday),
+                time_start = as.character(first(Time)), 
+                time_end = as.character(last(Time)),
                 AIS_ID=first(AIS_ID), 
                 SOG_median=median(SOG, na.rm=T), 
                 SOG_mean=mean(SOG, na.rm=T), 
                 do_union=FALSE, 
-                npoints=n()) %>%
+                npoints=n())
       st_cast("LINESTRING") %>% 
       st_make_valid() %>% 
       ungroup()
@@ -272,6 +282,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   AISlookup1 <- AIScsv %>%
     add_column(DimLength = AIScsv$Dimension_to_Bow+AIScsv$Dimension_to_stern, 
                DimWidth = AIScsv$Dimension_to_port+AIScsv$Dimension_to_starboard) %>%
+    filter(Message_ID %in% c(5,24)) %>%
     dplyr::select(-Dimension_to_Bow,
                   -Dimension_to_stern,
                   -Dimension_to_port,
@@ -279,8 +290,9 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
                   -Navigational_status, 
                   -SOG, 
                   -Longitude, 
-                  -Latitude) %>%
-    filter(Message_ID %in% c(5,24)) %>%
+                  -Latitude, 
+                  -Time,
+                  -Message_ID) %>%
     filter(nchar(trunc(abs(MMSI))) == 9) 
   
   # Identify "best" static message from a given day 
@@ -328,6 +340,9 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
       # from trial and error, I think that this last "TRUE" serves as a catch-all, but I can't logically figure out why it works. -\__(%)__/-
       TRUE ~ "Other"
     ))  
+    
+  # Remove identifying information 
+  AISjoined <- AISjoined %>% dplyr::select(-Vessel_Name, -IMO)
   
     
   nships <- AISjoined %>% st_drop_geometry() %>% group_by(AIS_Type) %>% summarize(n=length(unique(scramblemmsi)))
@@ -389,7 +404,8 @@ return(runtimes)
 # 
 # flags <- read.csv("./FlagCodes.csv")
 # scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% dplyr::select(MMSI, scramblemmsi)
-
+# daynight <- TRUE
+# 
 # FWS.AIS(csvList, flags, scrambleids, daynight=TRUE)
 
 # Frost flower segment
