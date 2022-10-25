@@ -22,31 +22,40 @@ set.seed(101557)
 # Run once per year of data 
 # If already completed, skip to next section 
 
-# # Specify year of data to process (the script runs one year at a time -- take 20 min to 1 hour per year of data)
-# yr <- 2020
-# 
-# # Pull up list of AIS files
+# Specify year of data to process (the script runs one year at a time -- take 20 min to 1 hour per year of data)
+yr <- 2021
+
+# Pull up list of AIS files
 # filedr <- paste0("D:/AlaskaConservation_AIS_20210225/Data_Raw/", yr,"/")
-# files <- paste0(filedr, list.files(filedr, pattern='.csv'))
-# 
-# # A function to extract unique MMSIs and the number of points per MMSI for each year of data 
+filedr <- paste0("D:/NSF_AIS_2021-2022/", yr,"/")
+files <- paste0(filedr, list.files(filedr, pattern='.csv'))
+
+# A function to extract unique MMSIs and the number of points per MMSI for each year of data
+# Works for 2015-2020 data 
 # MMSIextract <- function(filepath){
 #   csv <- read.csv(filepath, header=TRUE, colClasses = c("character", rep("NULL", 138)))
 #   mmsis <- csv %>% group_by(MMSI) %>% summarize(npoints = n())
 #   return(mmsis)
 # }
-# 
-# 
-# start <- proc.time()
-# 
-# mmsilist <- lapply(files, MMSIextract)
-# mmsis <- do.call(rbind , mmsilist)
-# uniquemmsis <- mmsis %>% group_by(MMSI) %>% summarize(ndays = n(), npoints=sum(npoints)) %>% mutate(year = yr)
-# write.csv(uniquemmsis, paste0("./Data_Processed/MMSIs/UniqueMMSIs_",yr,".csv"), row.names=FALSE)
-# 
-# (proc.time()-start)/60
+# Works for 2021-2022 data 
+MMSIextractnew <- function(filepath){
+  csv <- read.csv(filepath, header=TRUE)
+  mmsis <- csv %>% group_by(mmsi) %>% summarize(npoints = n())
+  mmsis <- rename(mmsis, MMSI = mmsi)
+  return(mmsis)
+}
 
-# browseURL("https://www.youtube.com/watch?v=K1b8AhIsSYQ")
+
+start <- proc.time()
+
+mmsilist <- lapply(files, MMSIextractnew)
+mmsis <- do.call(rbind , mmsilist)
+uniquemmsis <- mmsis %>% group_by(MMSI) %>% summarize(ndays = n(), npoints=sum(npoints)) %>% mutate(year = yr)
+write.csv(uniquemmsis, paste0("./Data_Processed/MMSIs/UniqueMMSIs_",yr,".csv"), row.names=FALSE)
+
+(proc.time()-start)/60
+
+browseURL("https://www.youtube.com/watch?v=K1b8AhIsSYQ")
 
 ################################################################################ 
 ######################## Unique MMSIs in 2015-2020 data ######################## 
