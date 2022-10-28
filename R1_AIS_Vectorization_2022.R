@@ -49,8 +49,9 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   # this will come in handy later. chars 28 to 34 = "yyyy-mm"
   print(csvList[[1]][1])
   
-  # MoName <- substr(csvList[[1]][1],45, 51) # HPCC #NEED TO FIX
-  MoName <- substr(csvList[[1]][1],38, 43) # MY COMPUTER
+  MoNameOld <- substr(csvList[[1]][1],45, 50) # HPCC #NEED TO FIX
+  MoName <- paste0(substr(MoNameOld,1,4), "-", substr(MoNameOld,5,6))
+  # MoName <- substr(csvList[[1]][1],38, 43) # MY COMPUTER
   yr <- substr(MoName, 1, 4) 
   mnth <- substr(MoName, 5, 6)
   print(paste("Processing",yr, mnth))
@@ -97,7 +98,6 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   # Create df using only position messages (excluding type 27 which has increased location error)
   # For more info on message types see: https://www.marinfo.gc.ca/e-nav/docs/list-of-ais-messages-en.php
   AIScsvDF5 <- AIScsvNew %>%
-    dplyr::select(MMSI,Latitude,Longitude,Time,Message_ID,SOG) %>%
     subset(!(Message_ID %in% c(5,24, 27)))
   
   metadata$messid_mmsis <- length(unique(AIScsvDF5$MMSI))
@@ -132,7 +132,10 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   AIScsvDF1 <- AIScsvDF2  %>% left_join(scrambleids, by="MMSI") %>% dplyr::select(-MMSI)
   
   # Create AIS_ID field
-  AIScsvDF <- AIScsvDF1 %>% add_column(AIS_ID = paste0(AIScsvDF1$scramblemmsi,"-",substr(AIScsvDF1$Time,1,8)))
+  AIScsvDF <- AIScsvDF1 %>% add_column(AIS_ID = paste0(AIScsvDF1$scramblemmsi,"-",
+                                                       substr(AIScsvDF1$Time,1,4),
+                                                       substr(AIScsvDF1$Time,6,7),
+                                                       substr(AIScsvDF1$Time,9,10)))
   
   # Identify and remove frost flowers 
   # (i.e. multiple messages from the same exact location sporadically transmitted throughout the day)
@@ -153,7 +156,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   
   # Make dataframe into spatial object 
   AISspeed3 <- AISspeed4 %>%
-    mutate(Time = as.POSIXct(Time, format="%Y%m%d_%H%M%OS", tz="GMT")) %>% # S-AIS are in UTC with is GMT 
+    mutate(Time = as.POSIXct(Time, format="%Y-%m-%d %H:%M:%OS", tz="GMT")) %>% # S-AIS are in UTC with is GMT 
     st_as_sf(coords=c("Longitude","Latitude"),crs=4326) %>%
     # project into Alaska Albers (or other CRS that doesn't create huge gap in mid-Bering with -180W and 180E)
     st_transform(crs=3338) %>%
@@ -197,6 +200,8 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
     print(paste("Spatial ",yr, mnth))
     sunrise <- maptools::sunriset(temp, dateTime=AISspeed1$Time, direction="sunrise", POSIXct.out=TRUE)
     sunset <- maptools::sunriset(temp, dateTime=AISspeed1$Time, direction="sunset", POSIXct.out=TRUE)
+    AISspeed1$sunrise <- sunrise$time
+    AISspeed1$sunset <- sunset$time
     print(paste("Sunrise",yr, mnth))
     AISspeed1$timeofday <- ifelse(AISspeed1$Time > sunrise$time & AISspeed1$Time < sunset$time, "day","night")
     AISspeed1$timeofday <- as.factor(AISspeed1$timeofday)
@@ -208,6 +213,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
 
   # Create new ID for each segment 
   AISspeed1$newseg[is.na(AISspeed1$newseg)] <- 1
+  AISspeed1$newseg[which(AISspeed1$timeofday != dplyr::lag(AISspeed1$timeofday))] <- 1
   temp <- AISspeed1 %>% 
     st_drop_geometry() %>% 
     dplyr::select(AIS_ID, newseg, timeofday) %>% 
@@ -243,8 +249,17 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
                 AIS_ID=first(AIS_ID), 
                 SOG_median=median(SOG, na.rm=T), 
                 SOG_mean=mean(SOG, na.rm=T), 
-                do_union=FALSE, 
-                npoints=n())
+                Ship_Type = first(Ship_Type), 
+                CountryCode = first(flag_code),
+                Country = first(Country),
+                Length = first(Length), 
+                Width = first(Width), 
+                Draught = first(Draught), 
+                Ship_Type_Spire = first(vessel_type_main),
+                Ship_Type_SpireSub = first(vessel_type_sub),
+                Destination = first(destination),
+                npoints=n(), 
+                do_union=FALSE)
     AISsftempnew <- AISsftemp[AISsftemp$npoints > 1,]
     
     metadata$daynightshort_aisids <- length(unique(AISsftempnew$AIS_ID))
@@ -290,71 +305,23 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   # Calculate total distance travelled
   AISsf$length_km <- as.numeric(st_length(AISsf)/1000)
 
-  # create lookup table from static messages
-  AISlookup1 <- AIScsv %>%
-    add_column(DimLength = AIScsv$Dimension_to_Bow+AIScsv$Dimension_to_stern, 
-               DimWidth = AIScsv$Dimension_to_port+AIScsv$Dimension_to_starboard) %>%
-    filter(Message_ID %in% c(5,24)) %>%
-    dplyr::select(-Dimension_to_Bow,
-                  -Dimension_to_stern,
-                  -Dimension_to_port,
-                  -Dimension_to_starboard, 
-                  -Navigational_status, 
-                  -SOG, 
-                  -Longitude, 
-                  -Latitude, 
-                  -Time,
-                  -Message_ID) %>%
-    filter(nchar(trunc(abs(MMSI))) == 9) 
-  
-  # Identify "best" static message from a given day 
-  # Take all the static messages from a given month and down weight messages with a ship 
-  # type of 0 or NA. Take the static messages and keeps the message with the highest weight
-  # Code adapted from: https://stackoverflow.com/questions/72650475/take-unique-rows-in-r-but-keep-most-common-value-of-a-column-and-use-hierarchy
-  wghts <- data.frame(poss = c(0, NA), nums = c(-10, -10))
-  matched <- left_join(AISlookup1, wghts, by = c("Ship_Type"= "poss"))
-  matched$nums[is.na(matched$nums)] <- 1
-  data.table::setDT(matched)[, freq := .N, by = c("MMSI", "Ship_Type")]
-  multiplied <- distinct(matched, MMSI, Ship_Type, .keep_all = TRUE)
-  multiplied$mult <- multiplied$nums * multiplied$freq
-  check <- multiplied[with(multiplied, order(MMSI, -mult)), ]
-  AISlookup <- distinct(check, MMSI, .keep_all = TRUE) %>% dplyr::select(-nums, -freq, -mult)
-  
-  metadata$InSfNotLookup_mmsis <- length(AISsf$MMSI[!(AISsf$MMSI %in% AISlookup$scramblemmsi)])
-  metadata$InLookupNotSf_mmsis <- length(AISlookup$MMSI[!(AISlookup$MMSI %in% AISsf$scramblemmsi)])
-  
-  # Add flag codes (based on original MMSI) 
-  # and join with scramblemmsi
-  AISlookup <- AISlookup %>% 
-    mutate(CountryCode = as.numeric(substr(as.character(MMSI), 1,3))) %>% 
-    dplyr::select(-Country) %>% 
-    left_join(flags, by=c("CountryCode" = "MID")) %>% 
-    left_join(scrambleids, by="MMSI") %>% 
-    dplyr::select(-MMSI)
-  
-  # Join lookup table to the lines based on scramble mmsi
-  AISjoined1 <- AISsf %>%
-    left_join(AISlookup,by="scramblemmsi")
-  
   # Split lines by ship type
   # link to ship type/numbers table: 
   # https://help.marinetraffic.com/hc/en-us/articles/205579997-What-is-the-significance-of-the-AIS-Shiptype-number-
-    AISjoined <- AISjoined1 %>%
+    AISjoined <- AISsf %>%
       mutate(AIS_Type = case_when(
-      is.na(AISjoined1$Ship_Type) ~ "Other",
-      substr(AISjoined1$Ship_Type,1,2)==30 ~ "Fishing",
-      substr(AISjoined1$Ship_Type,1,2)==52 ~ "Tug",
-      substr(AISjoined1$Ship_Type,1,1)==6 ~ "Passenger",
-      substr(AISjoined1$Ship_Type,1,2)==36 ~ "Sailing",
-      substr(AISjoined1$Ship_Type,1,2)==37 ~ "Pleasure",
-      substr(AISjoined1$Ship_Type,1,1)==7 ~ "Cargo",
-      substr(AISjoined1$Ship_Type,1,1)==8 ~ "Tanker",
+      is.na(AISsf$Ship_Type) ~ "Other",
+      substr(AISsf$Ship_Type,1,2)==30 ~ "Fishing",
+      substr(AISsf$Ship_Type,1,2)==52 ~ "Tug",
+      substr(AISsf$Ship_Type,1,1)==6 ~ "Passenger",
+      substr(AISsf$Ship_Type,1,2)==36 ~ "Sailing",
+      substr(AISsf$Ship_Type,1,2)==37 ~ "Pleasure",
+      substr(AISsf$Ship_Type,1,1)==7 ~ "Cargo",
+      substr(AISsf$Ship_Type,1,1)==8 ~ "Tanker",
       # from trial and error, I think that this last "TRUE" serves as a catch-all, but I can't logically figure out why it works. -\__(%)__/-
       TRUE ~ "Other"
     ))  
     
-  # Remove identifying information 
-  AISjoined <- AISjoined %>% dplyr::select(-Vessel_Name, -IMO)
   
     
   nships <- AISjoined %>% st_drop_geometry() %>% group_by(AIS_Type) %>% summarize(n=length(unique(scramblemmsi)))
@@ -384,8 +351,8 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
                 filter(AIS_Type==allTypes[k])
 
           # Save data in vector format
-          if(length(AISfilteredType$newsegid > 0)){
-            write_sf(AISfilteredType,paste0("../Data_Processed/Tracks_DayNight", daynight, "_",MoName,"-",allTypes[k],".shp"))
+          if(length(AISfilteredType$newsegid) > 0){
+            write_sf(AISfilteredType,paste0("../Data_Processed/Vector/Tracks_DayNight", daynight, "_",MoName,"-",allTypes[k],".shp"))
           }
   }
   
@@ -408,16 +375,16 @@ return(runtimes)
 
 # Pull up list of AIS files
 # filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2015/"
-filedr <- "D:/NSF_AIS_2021-2022/2021/"
-
-files <- paste0(filedr, list.files(filedr, pattern='.csv'))
-
-# Separate file names into monthly lists
-csvList <- files[1:6]
-
-flags <- read.csv("./FlagCodes.csv")
-scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% dplyr::select(MMSI, scramblemmsi)
-daynight <- TRUE
+# filedr <- "D:/NSF_AIS_2021-2022/2021/"
+# 
+# files <- paste0(filedr, list.files(filedr, pattern='.csv'))
+# 
+# # Separate file names into monthly lists
+# csvList <- files[1:6]
+# 
+# flags <- read.csv("./FlagCodes.csv")
+# scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2022.csv") %>% dplyr::select(MMSI, scramblemmsi)
+# daynight <- TRUE
 # 
 # FWS.AIS(csvList, flags, scrambleids, daynight=TRUE)
 
@@ -438,21 +405,21 @@ daynight <- TRUE
 ####################################################################
 
 # Pull up list of AIS files
-files <- paste0("../Data_Raw/2015/", list.files("../Data_Raw/2015", pattern='.csv'))
+files <- paste0("../Data_Raw/2022/", list.files("../Data_Raw/2022", pattern='.csv'))
 
 # Separate file names into monthly lists
-jan <- files[grepl("-01-", files)]
-feb <- files[grepl("-02-", files)]
-mar <- files[grepl("-03-", files)]
-apr <- files[grepl("-04-", files)]
-may <- files[grepl("-05-", files)]
-jun <- files[grepl("-06-", files)]
-jul <- files[grepl("-07-", files)]
-aug <- files[grepl("-08-", files)]
-sep <- files[grepl("-09-", files)]
-oct <- files[grepl("-10-", files)]
-nov <- files[grepl("-11-", files)]
-dec <- files[grepl("-12-", files)]
+jan <- files[grepl("exactEarth_202201", files)]
+feb <- files[grepl("exactEarth_202202", files)]
+mar <- files[grepl("exactEarth_202203", files)]
+apr <- files[grepl("exactEarth_202204", files)]
+may <- files[grepl("exactEarth_202205", files)]
+jun <- files[grepl("exactEarth_202206", files)]
+jul <- files[grepl("exactEarth_202207", files)]
+aug <- files[grepl("exactEarth_202208", files)]
+sep <- files[grepl("exactEarth_202209", files)]
+oct <- files[grepl("exactEarth_202210", files)]
+nov <- files[grepl("exactEarth_202211", files)]
+dec <- files[grepl("exactEarth_202212", files)]
 
 # Create a list of lists of all csv file names grouped by month
 csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
@@ -461,7 +428,7 @@ csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
 flags <- read.csv("../Data_Raw/FlagCodes.csv")
 
 # Import scramblemmsi codes
-scrambleids <- read.csv("../Data_Raw/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% dplyr::select(MMSI, scramblemmsi)
+scrambleids <- read.csv("../Data_Raw/ScrambledMMSI_Keys_2015-2022.csv") %>% dplyr::select(MMSI, scramblemmsi)
 
 ## MSU HPCC: https://wiki.hpcc.msu.edu/display/ITH/R+workshop+tutorial#Rworkshoptutorial-Submittingparalleljobstotheclusterusing{doParallel}:singlenode,multiplecores
 # Request a single node (this uses the "multicore" functionality)
