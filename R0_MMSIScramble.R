@@ -23,7 +23,7 @@ set.seed(101557)
 # If already completed, skip to next section 
 
 # Specify year of data to process (the script runs one year at a time -- take 20 min to 1 hour per year of data)
-yr <- 2021
+yr <- 2022
 
 # Pull up list of AIS files
 # filedr <- paste0("D:/AlaskaConservation_AIS_20210225/Data_Raw/", yr,"/")
@@ -48,8 +48,14 @@ MMSIextractnew <- function(filepath){
 
 start <- proc.time()
 
-mmsilist <- lapply(files, MMSIextractnew)
-mmsis <- do.call(rbind , mmsilist)
+mmsis <- data.frame()
+# mmsilist <- lapply(files, MMSIextractnew)
+for(i in 1:length(files)){
+  print(i)
+  temp <- MMSIextractnew(files[[i]])
+  mmsis <- rbind(mmsis, temp)
+}
+# mmsis <- do.call(rbind , mmsilist)
 uniquemmsis <- mmsis %>% group_by(MMSI) %>% summarize(ndays = n(), npoints=sum(npoints)) %>% mutate(year = yr)
 write.csv(uniquemmsis, paste0("./Data_Processed/MMSIs/UniqueMMSIs_",yr,".csv"), row.names=FALSE)
 
@@ -81,34 +87,37 @@ browseURL("https://www.youtube.com/watch?v=K1b8AhIsSYQ")
 # CODE WRITTEN BUT NOT YET TESTED
 
 # Read in MMSI key created from 2015-2020 data 
-filtmmsi <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020.csv")
+filtmmsi <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2021.csv")
 
 # Read in new MMSI data 
-xx <- read.csv("./Data_Processed/MMSIs/UniqueMMSIs_2021.csv") %>% filter(nchar(MMSI) == 9)
+xx <- read.csv("./Data_Processed/MMSIs/UniqueMMSIs_2022.csv") %>% 
+  filter(nchar(MMSI) == 9) %>% 
+  dplyr::select(-year, -ndays) %>% 
+  mutate(MMSI = as.integer(MMSI))
 
 # Join new and old data 
 newmmsi <- full_join(filtmmsi, xx, by="MMSI")
 
 # Calculate new numbers of points and days for all ships 
 newmmsi <- newmmsi %>% 
-  mutate(newnpoints = sum(npoints.x, npoints.y, na.rm=T), 
-                              newndays = sum(ndays.x, ndays.y, na.rm=T)) %>% 
-  select(-npoints.x, -npoints.y, -ndays.x, -ndays.y) %>% 
-  rname(npoints = newnpoints, ndays=newndays)
+  mutate(newnpoints = sum(npoints.x, npoints.y, na.rm=T)) %>% 
+  select(-npoints.x, -npoints.y, -X) %>% 
+  rename(npoints = newnpoints)
 
 # Don't know if this will work need to test... 
 noscram <- which(is.na(newmmsi$scramblemmsi))
 
 for(i in 1:length(noscram)){
+  print(i)
   repeat{
     id <- paste0(substr(newmmsi$MMSI[noscram[i]], 1, 3),as.character(sample(100000:999999, 1, replace=FALSE)))
     if (!id %in% newmmsi$scramblemmsi) break 
   }
-  newmmsi$scramblemmsi[i] <- id
+  newmmsi$scramblemmsi[noscram[i]] <- id
 }
 
 # FIX BEFORE SAVING FILE
-write.csv(newmmsi, "./Data_Processed/ScrambleMMSI_Keys_2015-XXXX.csv")
+write.csv(newmmsi, "./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2022.csv")
 
 
 
