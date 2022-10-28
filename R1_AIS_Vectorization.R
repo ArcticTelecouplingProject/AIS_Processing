@@ -185,17 +185,20 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
     print(paste("Spatial ",yr, mnth))
     sunrise <- maptools::sunriset(temp, dateTime=AISspeed1$Time, direction="sunrise", POSIXct.out=TRUE)
     sunset <- maptools::sunriset(temp, dateTime=AISspeed1$Time, direction="sunset", POSIXct.out=TRUE)
+    AISspeed1$sunrise <- sunrise$time
+    AISspeed1$sunset <- sunset$time
     print(paste("Sunrise",yr, mnth))
     AISspeed1$timeofday <- ifelse(AISspeed1$Time > sunrise$time & AISspeed1$Time < sunset$time, "day","night")
     AISspeed1$timeofday <- as.factor(AISspeed1$timeofday)
   }
   
-
+  
   AISspeed1$newseg <- ifelse(AISspeed1$timediff > 6, 1, 
-                            ifelse(AISspeed1$distdiff > 60, 1, 0))
-
+                             ifelse(AISspeed1$distdiff > 60, 1, 0))
+  
   # Create new ID for each segment 
   AISspeed1$newseg[is.na(AISspeed1$newseg)] <- 1
+  AISspeed1$newseg[which(AISspeed1$timeofday != dplyr::lag(AISspeed1$timeofday))] <- 1
   temp <- AISspeed1 %>% 
     st_drop_geometry() %>% 
     dplyr::select(AIS_ID, newseg, timeofday) %>% 
@@ -373,7 +376,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
 
           # Save data in vector format
           if(length(AISfilteredType$newsegid > 0)){
-            write_sf(AISfilteredType,paste0("../Data_Processed/Tracks_DayNight", daynight, "_",MoName,"-",allTypes[k],".shp"))
+            write_sf(AISfilteredType,paste0("../Data_Processed/Vector/Tracks_DayNight", daynight, "_",MoName,"-",allTypes[k],".shp"))
           }
   }
   
@@ -405,7 +408,7 @@ return(runtimes)
 # flags <- read.csv("./FlagCodes.csv")
 # scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv") %>% dplyr::select(MMSI, scramblemmsi)
 # daynight <- TRUE
-# 
+
 # FWS.AIS(csvList, flags, scrambleids, daynight=TRUE)
 
 # Frost flower segment
