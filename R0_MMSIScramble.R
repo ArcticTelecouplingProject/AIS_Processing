@@ -57,7 +57,7 @@ for(i in 1:length(files)){
 }
 # mmsis <- do.call(rbind , mmsilist)
 uniquemmsis <- mmsis %>% group_by(MMSI) %>% summarize(ndays = n(), npoints=sum(npoints)) %>% mutate(year = yr)
-write.csv(uniquemmsis, paste0("./Data_Processed/MMSIs/UniqueMMSIs_",yr,".csv"), row.names=FALSE)
+write.csv(uniquemmsis, paste0("../Data_Processed/MMSIs/UniqueMMSIs_",yr,".csv"), row.names=FALSE)
 
 (proc.time()-start)/60
 
@@ -90,7 +90,7 @@ browseURL("https://www.youtube.com/watch?v=K1b8AhIsSYQ")
 filtmmsi <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2021.csv")
 
 # Read in new MMSI data 
-xx <- read.csv("./Data_Processed/MMSIs/UniqueMMSIs_2022.csv") %>% 
+xx <- read.csv("../Data_Processed/MMSIs/UniqueMMSIs_2022.csv") %>% 
   filter(nchar(MMSI) == 9) %>% 
   dplyr::select(-year, -ndays) %>% 
   mutate(MMSI = as.integer(MMSI))
@@ -117,7 +117,7 @@ for(i in 1:length(noscram)){
 }
 
 # FIX BEFORE SAVING FILE
-write.csv(newmmsi, "./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2022.csv")
+write.csv(newmmsi, "../Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2022.csv")
 
 
 
