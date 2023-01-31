@@ -15,6 +15,10 @@ library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
 
+# Fig loc 
+figloc <- "D:/AIS_V2_DayNight_60km6hrgap/Figures/"
+locationsubset <- "WholeStudyArea"
+
 # Read in metadata from all years
 filenames <- list.files("D:/AIS_V2_DayNight_60km6hrgap/Metadata/", pattern='Metadata', full.names=T)
 
@@ -34,7 +38,7 @@ ggplot(meta, aes(x=yrmnth, y=ntotal_mmsis)) +
   ylab("Unique ships") +
   theme_bw() +
   theme(text = element_text(size=30))
-# ggsave("D:/AlaskaConservation_AIS_20210225/Figures/NumberShipsPerMonth.png",width=25,height=10,units='in',dpi=300)
+ggsave(paste0(figloc,"NumberShipsPerMonth_", locationsubset, ".png"),width=25,height=10,units='in',dpi=300)
 
 
 # Monthly traffic by vessel type 
@@ -69,7 +73,7 @@ ggplot(types, aes(x=yrmnth, y=nships)) +
   theme_bw() +
   theme(text = element_text(size=30), 
         axis.text.x = element_text(angle=45, hjust=1))
-# ggsave("D:/AlaskaConservation_AIS_20210225/Figures/NumberShipsPerMonth.png",width=25,height=10,units='in',dpi=300)
+ggsave(paste0(figloc,"NumberShipsPerMonthByType_", locationsubset, ".png"), width=25,height=15,units='in',dpi=300)
 
 # VERIFICATION that the total number of mmsis is equivalent to the sum of the number of ships of each type. 
 test <- types %>% group_by(yrmnth) %>% summarize(nships =sum(nships))
