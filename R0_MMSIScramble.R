@@ -57,7 +57,7 @@ for(i in 1:length(files)){
 }
 # mmsis <- do.call(rbind , mmsilist)
 uniquemmsis <- mmsis %>% group_by(MMSI) %>% summarize(ndays = n(), npoints=sum(npoints)) %>% mutate(year = yr)
-write.csv(uniquemmsis, paste0("../Data_Processed/MMSIs/UniqueMMSIs_",yr,".csv"), row.names=FALSE)
+write.csv(uniquemmsis, paste0("./Data_Processed/MMSIs/UniqueMMSIs_",yr,".csv"), row.names=FALSE)
 
 (proc.time()-start)/60
 
@@ -90,19 +90,13 @@ browseURL("https://www.youtube.com/watch?v=K1b8AhIsSYQ")
 filtmmsi <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2021.csv")
 
 # Read in new MMSI data 
-xx <- read.csv("../Data_Processed/MMSIs/UniqueMMSIs_2022.csv") %>% 
+xx <- read.csv("./Data_Processed/MMSIs/UniqueMMSIs_2022.csv") %>% 
   filter(nchar(MMSI) == 9) %>% 
-  dplyr::select(-year, -ndays) %>% 
+  dplyr::select(-year, -ndays, -npoints) %>% 
   mutate(MMSI = as.integer(MMSI))
 
 # Join new and old data 
-newmmsi <- full_join(filtmmsi, xx, by="MMSI")
-
-# Calculate new numbers of points and days for all ships 
-newmmsi <- newmmsi %>% 
-  mutate(newnpoints = sum(npoints.x, npoints.y, na.rm=T)) %>% 
-  select(-npoints.x, -npoints.y, -X) %>% 
-  rename(npoints = newnpoints)
+newmmsi <- full_join(filtmmsi, xx, by="MMSI") %>% select(-npoints, -X)
 
 # Don't know if this will work need to test... 
 noscram <- which(is.na(newmmsi$scramblemmsi))
@@ -117,12 +111,16 @@ for(i in 1:length(noscram)){
 }
 
 # FIX BEFORE SAVING FILE
-write.csv(newmmsi, "../Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2022.csv")
+write.csv(newmmsi, "./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2022.csv")
 
+#####################################
+# Testing output to make sure scramblemmsis of old ships have not changed
+origscram <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2020_FROZEN.csv")
 
+joinscram <- left_join(origscram, newmmsi, by=c("MMSI"))
 
-
-
+which(joinscram$scramblemmsi.x != joinscram$scramblemmsi.y)
+# No ships in which the scrambled mmsi differs between the 2015-2020 scramble csv and the new 2015-2022 csv! 
 
 
 
