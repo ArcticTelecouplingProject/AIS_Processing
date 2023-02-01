@@ -93,3 +93,15 @@ ggplot(meta, aes(x=yrmnth, y=nships)) +
   theme(text = element_text(size=30), 
         axis.text.x = element_text(angle=45, hjust=1))
 ggsave(paste0(figloc,"NumberShipsPerMonthByType_", locationsubset, ".png"), width=25,height=15,units='in',dpi=300)
+
+# Proportion of each vesel type by year 
+metayr <- meta %>% group_by(yr, type) %>% summarize(nships = sum(nships))
+
+ggplot(metayr, aes(x=yr, y=nships, fill=type)) +
+  geom_bar(position="fill", stat="identity") +
+  ylab("Percent of ships") +
+  xlab("") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(text = element_text(size=30))
+  ggsave(paste0(figloc,"PercentageOfShipsPerYearByType_", locationsubset, ".png"), width=15,height=15,units='in',dpi=300)
+          
