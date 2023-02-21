@@ -49,11 +49,11 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   # this will come in handy later. chars 28 to 34 = "yyyy-mm"
   print(csvList[[1]][1])
   
-  MoNameOld <- substr(csvList[[1]][1],45, 50) # HPCC #NEED TO FIX
+  MoNameOld <- substr(csvList[[1]][1],44, 49) # HPCC #NEED TO FIX
   MoName <- paste0(substr(MoNameOld,1,4), "-", substr(MoNameOld,5,6))
   # MoName <- substr(csvList[[1]][1],38, 43) # MY COMPUTER
   yr <- substr(MoName, 1, 4) 
-  mnth <- substr(MoName, 5, 6)
+  mnth <- substr(MoName, 6, 7)  
   print(paste("Processing",yr, mnth))
   
   # set up dfs for metadata and runtimes
@@ -77,8 +77,8 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
                               IMO = imo, 
                               Draught = draught, 
                               Navigational_status = nav_status_code, 
-                              Length = length, 
-                              Width = width)
+                              DimLength = length, 
+                              DimWidth = width)
 
   metadata$orig_MMSIs <- length(unique(AIScsvNew$MMSI))
   metadata$orig_pts <- length(AIScsvNew$MMSI)
@@ -90,7 +90,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   start <- proc.time()
   
   # Convert character columns to numeric as needed
-  numcols <- c("MMSI", "Message_ID", "IMO", "Ship_Type", "Length", "Width", 
+  numcols <- c("MMSI", "Message_ID", "IMO", "Ship_Type", "DimLength", "DimWidth", 
                "Draught", "Navigational_status", "SOG", "Longitude", "Latitude")
   AIScsvNew[,numcols] <- lapply(AIScsvNew[,numcols], as.numeric)
   
@@ -164,12 +164,12 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   
   # Calculate the euclidean speed between points
   # Also remove successive duplicate points (i.e., same time stamp and/or same location)
-  AISspeed3[, c("long", "lat")] <- st_coordinates(AISspeed3)
+  AISspeed3[, c("x", "y")] <- st_coordinates(AISspeed3)
   AISspeed2 <- AISspeed3 %>% 
     group_by(AIS_ID) %>%
     arrange(AIS_ID, Time) %>% 
     mutate(timediff = as.numeric(difftime(Time,lag(Time),units=c("hours"))),
-           distdiff = sqrt((lat-lag(lat))^2 + (long-lag(long))^2)/1000) %>% 
+           distdiff = sqrt((y-lag(y))^2 + (x-lag(x))^2)/1000) %>% 
     filter(timediff > 0) %>% 
     filter(distdiff > 0) %>% 
     mutate(speed = distdiff/timediff)
@@ -191,20 +191,24 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
     group_by(AIS_ID) %>%
     arrange(AIS_ID, Time) %>% 
     mutate(timediff = as.numeric(difftime(Time,lag(Time),units=c("hours"))),
-           distdiff = sqrt((lat-lag(lat))^2 + (long-lag(long))^2)/1000) %>% 
+           distdiff = sqrt((y-lag(y))^2 + (x-lag(x))^2)/1000) %>% 
     ungroup()
   
   # Calculate whether points are occurring during daytime or at night 
   if(daynight==TRUE){
-    temp <- st_coordinates(st_transform(AISspeed1, 4326))
     print(paste("Spatial ",yr, mnth))
+    temp <- st_coordinates(st_transform(AISspeed1, 4326))
+    
+    solarpos <- maptools::solarpos(temp, dateTime=AISspeed1$Time, POSIXct.out=TRUE)
     sunrise <- maptools::sunriset(temp, dateTime=AISspeed1$Time, direction="sunrise", POSIXct.out=TRUE)
     sunset <- maptools::sunriset(temp, dateTime=AISspeed1$Time, direction="sunset", POSIXct.out=TRUE)
+    
+    print(paste("Sunrise",yr, mnth))
+    AISspeed1$solarpos <- solarpos[,2]
+    AISspeed1$timeofday <- as.factor(ifelse(AISspeed1$solarpos > 0, "day","night"))
+    
     AISspeed1$sunrise <- sunrise$time
     AISspeed1$sunset <- sunset$time
-    print(paste("Sunrise",yr, mnth))
-    AISspeed1$timeofday <- ifelse(AISspeed1$Time > sunrise$time & AISspeed1$Time < sunset$time, "day","night")
-    AISspeed1$timeofday <- as.factor(AISspeed1$timeofday)
   }
   
 
@@ -213,12 +217,23 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
 
   # Create new ID for each segment 
   AISspeed1$newseg[is.na(AISspeed1$newseg)] <- 1
-  AISspeed1$newseg[which(AISspeed1$timeofday != dplyr::lag(AISspeed1$timeofday))] <- 1
-  temp <- AISspeed1 %>% 
-    st_drop_geometry() %>% 
-    dplyr::select(AIS_ID, newseg, timeofday) %>% 
-    group_by(AIS_ID) %>% 
-    mutate(newseg = cumsum(newseg))
+  
+  if(daynight==TRUE){
+    AISspeed1$newseg[which(AISspeed1$timeofday != dplyr::lag(AISspeed1$timeofday))] <- 1
+    temp <- AISspeed1 %>% 
+      st_drop_geometry() %>% 
+      dplyr::select(AIS_ID, newseg, timeofday) %>% 
+      group_by(AIS_ID) %>% 
+      mutate(newseg = cumsum(newseg))
+  }
+  if(daynight==FALSE){
+    temp <- AISspeed1 %>% 
+      st_drop_geometry() %>% 
+      dplyr::select(AIS_ID, newseg) %>% 
+      group_by(AIS_ID) %>% 
+      mutate(newseg = cumsum(newseg))
+  }
+  
   AISspeed1$newsegid <- paste0(AISspeed1$AIS_ID, temp$newseg)
   
   # Remove segments with only one point (can't be made into lines)
@@ -243,17 +258,17 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
       group_by(newsegid) %>%
       # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
       summarize(scramblemmsi=first(scramblemmsi), 
-                timeofday=first(timeofday),
-                time_start = as.character(first(Time)), 
-                time_end = as.character(last(Time)),
+                Time_Of_Day=first(timeofday),
+                Time_Start = as.character(first(Time)), 
+                Time_End = as.character(last(Time)),
                 AIS_ID=first(AIS_ID), 
-                SOG_median=median(SOG, na.rm=T), 
-                SOG_mean=mean(SOG, na.rm=T), 
+                SOG_Median=median(SOG, na.rm=T), 
+                SOG_Mean=mean(SOG, na.rm=T), 
                 Ship_Type = first(Ship_Type), 
-                CountryCode = first(flag_code),
+                Country_Code = first(flag_code),
                 Country = first(Country),
-                Length = first(Length), 
-                Width = first(Width), 
+                Dim_Length = first(DimLength), 
+                Dim_Width = first(DimWidth), 
                 Draught = first(Draught), 
                 Ship_Type_Spire = first(vessel_type_main),
                 Ship_Type_SpireSub = first(vessel_type_sub),
@@ -277,14 +292,22 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
       group_by(newsegid) %>%
       # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
       summarize(scramblemmsi=first(scramblemmsi), 
-                timeofday=first(timeofday),
-                time_start = as.character(first(Time)), 
-                time_end = as.character(last(Time)),
+                Time_Start = as.character(first(Time)), 
+                Time_End = as.character(last(Time)),
                 AIS_ID=first(AIS_ID), 
-                SOG_median=median(SOG, na.rm=T), 
-                SOG_mean=mean(SOG, na.rm=T), 
+                SOG_Median=median(SOG, na.rm=T), 
+                SOG_Mean=mean(SOG, na.rm=T), 
+                Ship_Type = first(Ship_Type), 
+                Country_Code = first(flag_code),
+                Country = first(Country),
+                Dim_Length = first(DimLength), 
+                Dim_Width = first(DimWidth), 
+                Draught = first(Draught), 
+                Ship_Type_Spire = first(vessel_type_main),
+                Ship_Type_SpireSub = first(vessel_type_sub),
+                Destination = first(destination),
                 do_union=FALSE, 
-                npoints=n())
+                npoints=n()) %>% 
       st_cast("LINESTRING") %>% 
       st_make_valid() %>% 
       ungroup()
@@ -303,7 +326,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   start <- proc.time()
   
   # Calculate total distance travelled
-  AISsf$length_km <- as.numeric(st_length(AISsf)/1000)
+  AISsf$Length_Km <- as.numeric(st_length(AISsf)/1000)
 
   # Split lines by ship type
   # link to ship type/numbers table: 
@@ -334,7 +357,7 @@ FWS.AIS <- function(csvList, flags, scrambleids, daynight=FALSE){
   metadata$ncargo_mmsis <- nships$n[nships$AIS_Type == "Cargo"]
   metadata$nother_mmsis <- nships$n[nships$AIS_Type == "Other"]
   metadata$ntotal_mmsis <- sum(nships$n)
-  metadata$totallength_km <- sum(AISjoined$length_km)
+  metadata$totallength_km <- sum(AISjoined$Length_Km)
   
   runtimes$jointime <- (proc.time() - start)[[3]]/60
   
@@ -373,7 +396,7 @@ return(runtimes)
 ####################### TEST CODE ####################### 
 #########################################################
 
-# Pull up list of AIS files
+# # Pull up list of AIS files
 # filedr <- "D:/AlaskaConservation_AIS_20210225/Data_Raw/2015/"
 # filedr <- "D:/NSF_AIS_2021-2022/2021/"
 # 
@@ -382,9 +405,9 @@ return(runtimes)
 # # Separate file names into monthly lists
 # csvList <- files[1:6]
 # 
-# flags <- read.csv("./FlagCodes.csv")
-# scrambleids <- read.csv("./Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2022.csv") %>% dplyr::select(MMSI, scramblemmsi)
-# daynight <- TRUE
+# flags <- read.csv("../Data_Raw/FlagCodes.csv")
+# scrambleids <- read.csv("../Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2022.csv") %>% dplyr::select(MMSI, scramblemmsi)
+# daynight <- FALSE
 # 
 # FWS.AIS(csvList, flags, scrambleids, daynight=TRUE)
 
@@ -443,7 +466,7 @@ res=list()
 # I'm using tidyverse since it combines dplyr and tidyr into one library (I think)
 res=foreach(i=1:12,.packages=c("maptools", "rgdal", "dplyr", "tidyr", "tibble", "stars", "raster", "foreach","purrr", "doParallel", "data.table"),
             .errorhandling='pass',.verbose=T,.multicombine=TRUE) %dopar% 
-  FWS.AIS(csvList=csvsByMonth[[i]], flags=flags, scrambleids=scrambleids, daynight=TRUE)
+  FWS.AIS(csvList=csvsByMonth[[i]], flags=flags, scrambleids=scrambleids, daynight=FALSE)
 # lapply(csvsByMonth, FWS.AIS)
 
 # Elapsed time and running information
