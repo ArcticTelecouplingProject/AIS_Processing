@@ -11,24 +11,25 @@
 ################################################################################
 
 # Load Libraries 
-library(spatstat)
 library(rgdal)
 library(raster)
 library(maptools)
 library(sf)
+library(spatstat.geom)
 
 
-AIS.Rasta <- function(filename, vectorName, savedsn, cellsize=25000, nightonly=FALSE){
+AIS.Rasta <- function(filename, vectorName, savedsn, cellsize=4000, nightonly=FALSE){
+  print(filename)
   # start timer 
   starttime <- proc.time()
   
   #read line shapefile
   # moSHP <- readOGR(dsn, vectorName)
-  temp <- st_read(filename)
+  temp <- st_read(filename, quiet = TRUE)
   
-  if(nightonly == TRUE){
-    temp <- temp[temp$timefdy == "night",]
-  }
+  # if(nightonly == TRUE){
+  #   temp <- temp[temp$timefdy == "night",]
+  # }
   # test <- readOGR(paste0(path, files[[1]]))
   moSHP <- as(temp, "Spatial")
   
@@ -54,9 +55,9 @@ AIS.Rasta <- function(filename, vectorName, savedsn, cellsize=25000, nightonly=F
   if(nightonly==FALSE){
     writeRaster(moRAST,paste0(savedsn,"AISRaster",substr(vectorName,7,nchar(vectorName)),"_",cellsize_km,"km",".tif"))
   }
-  if(nightonly==TRUE){
-    writeRaster(moRAST,paste0(savedsn,"AISRaster",substr(vectorName,7,nchar(vectorName)),"_",cellsize_km,"km_NightOnly",".tif")) 
-  }
+  # if(nightonly==TRUE){
+  #   writeRaster(moRAST,paste0(savedsn,"AISRaster",substr(vectorName,7,nchar(vectorName)),"_",cellsize_km,"km_NightOnly",".tif")) 
+  # }
   
   runtime <- proc.time() - starttime 
   print(runtime)
@@ -64,11 +65,14 @@ AIS.Rasta <- function(filename, vectorName, savedsn, cellsize=25000, nightonly=F
 
 # Setup to see syntax - yours will vary based on input/output file structure
 path <- "D:/AIS_V2_DayNight_60km6hrgap/Vector/"
+# path <- "../Data_Processed/Vector/"
+
 
 files <- list.files(path, pattern='.shp')
 
 # ID save destination and make list of raster file names already within it
 savedsn <- "D:/AIS_V2_DayNight_60km6hrgap/Raster/"
+# savedsn <- "../Data_Processed/Raster/"
 saverasters <- list.files(savedsn, pattern='.tif.aux')
 saverasters <- substr(saverasters, 11,nchar(saverasters)-17)
 
@@ -80,11 +84,10 @@ inS <- substr(files,1,nchar(files)-4)
 inSnew <- inS[!substr(inS, 8,nchar(inS)) %in% saverasters]
 
 start <- proc.time()
-lapply(inSnew, function(x){AIS.Rasta(filename= paste0(path, x, ".shp"), vectorName=x, savedsn=savedsn, cellsize=25000, nightonly=FALSE)}) 
+lapply(inSnew, function(x){AIS.Rasta(filename= paste0(path, x, ".shp"), vectorName=x, savedsn=savedsn, cellsize=4000, nightonly=FALSE)}) 
 tottime <- proc.time()-start
-browseURL("https://www.youtube.com/watch?v=AZQxH_8raCI&ab_channel=worldslover234")
+# browseURL("https://www.youtube.com/watch?v=AZQxH_8raCI&ab_channel=worldslover234")
 
 # wd <- "D:/AlaskaConservation_AIS_20210225/Data_Processed_HPCC_FINAL/2020/Raster"
 # files <- paste0(wd,"/",list.files(wd, pattern='.tif'))
 # file.rename(files, gsub(".tif","_25km.tif",files))
-
