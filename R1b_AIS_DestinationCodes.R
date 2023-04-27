@@ -6,7 +6,7 @@
 # CREATED: 2023-04-27
 # LAST UPDATED ON: 2023-04-27
 # 
-# NOTE: 
+# NOTE: Hello this is Bella
 ################################################################################
 
 # Load libraries
