@@ -447,9 +447,11 @@ return(runtimes)
 ####################################################################
 
 # Pull up list of AIS files
-files <- paste0("../Data_Raw/2015/", list.files("../Data_Raw/2015", pattern='.csv'))
+files <- paste0("../Data_Raw/2015/", list.files("../Data_Raw/2015", pattern='.csv')) ## RECURSIVE = TRUE? 
 
 # Separate file names into monthly lists
+# Create vector of year mon combos 
+# Iterate through and create list of lists of file names 
 jan <- files[grepl("-01-", files)]
 feb <- files[grepl("-02-", files)]
 mar <- files[grepl("-03-", files)]
