@@ -6,14 +6,12 @@
 # CREATED: 2023-04-27
 # LAST UPDATED ON: 2023-04-27
 # 
-# NOTE: 
+# NOTE: Hello this is Kelly. 
 ################################################################################
 
 # Load libraries
 library(sf)
 library(dplyr)
-
-
 
 # Create list of files 
 vpath <- "D:/AIS_V2_DayNight_60km6hrgap/Vector/"
