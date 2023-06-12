@@ -13,6 +13,9 @@
 library(sf)
 library(dplyr)
 
+# Outpath 
+outpath <- "D:/AIS_V2_DayNight_60km6hrgap/Vector_Destinations/"
+
 # Create list of files 
 vpath <- "D:/AIS_V2_DayNight_60km6hrgap/Vector/"
 
@@ -20,5 +23,31 @@ vecs <- list.files(vpath, pattern='.shp', full.names = F)
 vecsfull <- list.files(vpath, pattern='.shp', full.names = T)
 
 # Read in codes. 
+destpath <- "../Data_Processed/Destination_Recoding.csv"
+dest <- read.csv(destpath)
 
+miss <- list()
 
+for(i in 1:length(vecsfull)){
+  if(i %% 10 == 0){print(paste0(i, " of ", length(vecsfull), " files recoded."))}
+  # read in one month of data
+  vec <- st_read(vecsfull[[i]])
+  # unique(vec$Destntn)
+  
+  # determine which cells have matching destination codes in destination database
+  unique(vec$Destntn) %in% unique(dest$Destntn)
+  
+  miss <- append(miss, vec$Destntn[which(!unique(vec$Destntn) %in% unique(dest$Destntn))])
+  
+  # Determine percentage of cells that have matching destination codes in destination database
+  # sum(unique(vec$Destntn) %in% unique(dest$Destntn))/length(unique(vec$Destntn))
+  
+  # length(unique(dest$Destntn))
+  
+  # Remove duplicated values for destntn code
+  # destuniq <- dest[!duplicated(dest$Destntn),]
+  
+  vecnew <- vec %>% left_join(destuniq, by="Destntn")
+  
+  st_write(vecnew, paste0(outpath, vecs[[i]]))
+}
