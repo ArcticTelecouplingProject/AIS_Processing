@@ -47,14 +47,14 @@ for(i in 2015:2022){
   yrvecs <- vecsfull[grep(i, vecsfull)]
   yrvecs <- lapply(yrvecs, st_read)
   yr <- do.call(rbind, yrvecs)
-  yrnew <- yr %>% dplyr::select(-IMO, -Vssl_Nm)
-  st_write(yr, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted/Vector_", i, ".shp"))
+  # yrnew <- yr %>% dplyr::select(-IMO, -Vssl_Nm)
+  st_write(yr, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted_Destinations/Vector_", i, ".shp"))
 }
 
 # Aggregate vector lines by vessel type
-types <- c("Cargo", "Tanker", "Fishing", "Tug", "Pleasure", "Passenger", "Sailing", "Other")
+types <- c("Cargo", "Tanker", "Tug", "Pleasure", "Passenger", "Sailing", "Other", "Fishing")
 
-for(i in 4:length(types)){
+for(i in 8:length(types)){
   temp <- types[[i]]
   print(temp)
   typevecs <- vecsfull[grep(temp, vecsfull)]
@@ -64,20 +64,21 @@ for(i in 4:length(types)){
   typ$mnth <- lubridate::month(typ$Tm_Strt)
   typ$day <- lubridate::day(typ$Tm_Strt)
   
-  st_write(typ, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted/Vector_", temp, ".shp"))
+  # st_write(typ, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted_Destinations/Vector_", temp, ".shp"))
 }
 
 browseURL("https://www.youtube.com/watch?v=K1b8AhIsSYQ")
 
 # Have to save fishing data in two separate files because it's too big for one shapefile
+
 typ15 <- typ[typ$yr %in% 2015:2018,]
-st_write(typ15, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted/Vector_", temp, "_a.shp"))
+st_write(typ15, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted_Destinations/Vector_", temp, "_a.shp"))
 
 typ19 <- typ[typ$yr %in% 2019:2020,]
-st_write(typ19, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted/Vector_", temp, "_b.shp"))
+st_write(typ19, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted_Destinations/Vector_", temp, "_b.shp"))
  
 typ21 <- typ[typ$yr %in% 2021:2022,]
-st_write(typ21, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted/Vector_", temp, "_c.shp"))
+st_write(typ21, paste0("D:/AIS_V2_DayNight_60km6hrgap/Reformatted_Destinations/Vector_", temp, "_c.shp"))
 
 ###################################################################
 # RASTER
