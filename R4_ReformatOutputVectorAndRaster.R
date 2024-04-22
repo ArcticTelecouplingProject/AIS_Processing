@@ -13,7 +13,7 @@ library(dplyr)
 library(terra)
 
 # Setup to see syntax - yours will vary based on input/output file structure
-vpath <- "D:/AIS_V2_DayNight_60km6hrgap/Vector/"
+vpath <- "D:/AIS_V2_DayNight_60km6hrgap/Vector_Destinations/"
 
 vecs <- list.files(vpath, pattern='.shp', full.names = F)
 vecsfull <- list.files(vpath, pattern='.shp', full.names = T)
