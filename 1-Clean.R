@@ -47,10 +47,10 @@ csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
 
 flags <- read.csv("../Data_Raw/FlagCodes.csv")
 
-scrambleids <- read.csv("../Data_Processed/MMSIs/ScrambledMMSI_Keys_2015-2022.csv") %>%
+scrambleids <- read.csv("../Data_Raw/ScrambledMMSI_Keys_2015-2022.csv") %>%
   dplyr::select(MMSI, scramblemmsi)
 
-dest <- read.csv("../Data_Processed/Destination_Recoding.csv")
+dest <- read.csv("../Data_Raw/Destination_Recoding.csv")
 
 daynight <- FALSE
 
