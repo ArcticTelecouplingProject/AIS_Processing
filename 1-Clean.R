@@ -1,7 +1,12 @@
 
+# Load libraries 
 library(tidyverse)
 library(sf)
 
+# Start timer
+start <- proc.time()
+
+# Import year from sb file 
 year <- commandArgs(trailingOnly = TRUE)
 
 # Load in files 
