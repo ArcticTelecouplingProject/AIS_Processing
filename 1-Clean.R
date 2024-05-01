@@ -1,13 +1,16 @@
 
 library(tidyverse)
 library(sf)
+library(purrr)
+library(foreach)
+library(doParallel)
 
 year <- commandArgs(trailingOnly = TRUE)
 
 # Load in files 
 if(year %in% c(2021:2022)){
   # dir <- "D:/NSF_AIS_2021-2022/2021/"
-  dir <- pase0("../Data_Raw/", year)
+  dir <- paste0("../Data_Raw/", year, "/")
   files <- paste0(dir, list.files(dir, pattern='.csv'))
   # Separate file names into monthly lists
   jan <- files[grepl(paste0("exactEarth_", year, "01"), files)]
@@ -25,7 +28,7 @@ if(year %in% c(2021:2022)){
 }
 if(year %in% 2015:2020){
   # dir <- paste0("D:/AlaskaConservation_AIS_20210225/Data_Raw/", year, "/")
-  dir <- pase0("../Data_Raw/", year)
+  dir <- paste0("../Data_Raw/", year, "/")
   files <- paste0(dir, list.files(dir, pattern='.csv'))
   # Iterate through and create list of lists of file names 
   jan <- files[grepl("-01-", files)]
