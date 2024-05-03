@@ -2,6 +2,7 @@
 # Load libraries 
 library(tidyverse)
 library(sf)
+library(stringi)
 library(purrr)
 library(foreach)
 library(doParallel)
@@ -10,6 +11,7 @@ library(doParallel)
 start <- proc.time()
 
 # Import year from sb file 
+# year <- 2015
 year <- commandArgs(trailingOnly = TRUE)
 
 # Load in files 
@@ -51,8 +53,9 @@ if(year %in% 2015:2020){
 }
 
 # Create a list of lists of all csv file names grouped by month
-# csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
-csvsByMonth <- list(jun, jul, aug)
+csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
+# csvsByMonth <- list(jun, jul, aug)
+# csvsByMonth <- list(jun[1:2])
 
 flags <- read.csv("../Data_Raw/FlagCodes.csv")
 
@@ -77,7 +80,7 @@ res=list()
 # foreach and %dopar% work together to implement the parallelization
 # note that you have to tell each core what packages you need (another reason to minimize library use), so it can pull those over
 # I'm using tidyverse since it combines dplyr and tidyr into one library (I think)
-res=foreach(i=1:length(csvsByMonth),.packages=c("tidyverse", "sf", "doParallel"),
+res=foreach(i=1:length(csvsByMonth),.packages=c("tidyverse", "sf", "doParallel", "stringi"),
             .errorhandling='pass',.verbose=T,.multicombine=TRUE) %dopar% 
   clean_and_vectorize(csvList=csvsByMonth[[i]], 
                       flags=flags, 
