@@ -1,5 +1,6 @@
 clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   
+  # profvis({
   # Start overall timer 
   starttime <- proc.time()
   
@@ -296,7 +297,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
       mutate(newseg = cumsum(newseg))
   }
   
-  AISspeed1$newsegid <- paste0(AISspeed1$AIS_ID, temp$newseg)
+  AISspeed1$newsegid <- stringi::stri_c(AISspeed1$AIS_ID,  temp$newseg, sep = "")
   
   # Remove segments with only one point (can't be made into lines)
   shortids <- AISspeed1 %>% 
@@ -459,5 +460,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   write.csv(runtimes, paste0("../Data_Processed/Metadata/Runtimes_DayNight", 
                              daynight, "_",MoName,".csv"))
   print(runtimes)
+  
+# })
   return(runtimes)
 }
