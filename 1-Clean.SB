@@ -11,10 +11,10 @@
 #SBATCH --cpus-per-task=12
 #
 # how much memory?
-#SBATCH --mem-per-cpu=100gb
+#SBATCH --mem-per-cpu=75gb
 # 
 # how long?
-#SBATCH --time=024:00:00
+#SBATCH --time=018:00:00
 # 
 # Mail type:
 #SBATCH --mail-type=FAIL,END
