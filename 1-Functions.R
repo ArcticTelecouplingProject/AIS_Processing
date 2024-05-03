@@ -220,7 +220,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   # Also remove successive duplicate points (i.e., same time stamp and/or same location)
   AISspeed3[, c("x", "y")] <- st_coordinates(AISspeed3)
   AISspeed2 <- AISspeed3 %>% 
-    # st_drop_geometry() %>% 
+    st_drop_geometry() %>%
     group_by(AIS_ID) %>%
     arrange(AIS_ID, Time) %>% 
     mutate(timediff = as.numeric(difftime(Time,lag(Time),units=c("hours"))),
@@ -291,7 +291,6 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   }
   if(daynight==FALSE){
     temp <- AISspeed1 %>% 
-      st_drop_geometry() %>% 
       dplyr::select(AIS_ID, newseg) %>% 
       group_by(AIS_ID) %>% 
       mutate(newseg = cumsum(newseg))
@@ -301,7 +300,6 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   
   # Remove segments with only one point (can't be made into lines)
   shortids <- AISspeed1 %>% 
-    st_drop_geometry() %>% 
     group_by(newsegid) %>% 
     summarize(n=n()) %>% 
     dplyr::filter(n < 2)
@@ -323,6 +321,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   # create sf lines by sorted / grouped points
   if(daynight==TRUE){
     AISsftemp <- AISspeed %>%
+      st_as_sf(coords=c("x","y"),crs=3338) %>%
       arrange(Time) %>%
       # create 1 line per AIS ID
       group_by(newsegid) %>%
@@ -354,6 +353,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   }
   if(daynight==FALSE){
     AISsf1 <- AISspeed %>%
+      st_as_sf(coords=c("x","y"),crs=3338) %>%
       arrange(Time) %>%
       # create 1 line per AIS ID
       group_by(newsegid) %>%
