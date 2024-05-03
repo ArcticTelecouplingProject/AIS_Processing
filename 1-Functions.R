@@ -54,6 +54,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   )
   
   AIScsv <- do.call(rbind , temp)
+  rm(temp)
   
   # Rename columns in new data to match old data 
   if(year %in% c(2021:2022)){
@@ -75,7 +76,8 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
              Dim_Width = width) %>% 
       # S-AIS are in UTC with is GMT 
       mutate(Time = lubridate::ymd_hms(Time, tz="GMT"),
-             temp = as.numeric(substr(MMSI, 1, 3))) %>% 
+             temp = as.numeric(substr(MMSI, 1, 3)), 
+             MMSI = as.integer(MMSI)) %>% 
       left_join(., flags, by=join_by(temp == MID))  %>% 
       dplyr::select(MMSI, 
                     Longitude, 
@@ -145,6 +147,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
                         multiple="first") %>% 
       mutate(Time = Time.x) %>% 
       dplyr::select(-Time.y)
+    rm(AIScsv_pos, AIScsv_stat)
   }
   
   metadata$orig_MMSIs <- length(unique(AIScsv$MMSI))
@@ -156,6 +159,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   AIScsvDF4 <- AIScsv %>%
     filter(!is.na(Latitude)) %>%
     filter(!is.na(Longitude)) 
+  rm(AIScsv)
   
   metadata$invallatlon__mmsis <- length(unique(AIScsvDF4$MMSI))
   metadata$invallatlon__pts <- length(AIScsvDF4$MMSI)
@@ -164,6 +168,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   # Remove invalid MMSIs
   AIScsvDF3 <- AIScsvDF4 %>%
     dplyr::filter(nchar(trunc(abs(MMSI))) == 9)
+  rm(AIScsvDF4)
   
   metadata$invalmmsi__mmsis <- length(unique(AIScsvDF3$MMSI))
   metadata$invalmmsi__pts <- length(AIScsvDF3$MMSI)
@@ -172,6 +177,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   # Remove stationary aids to navigation
   AIScsvDF2 <- AIScsvDF3 %>%
     dplyr::filter(MMSI < 990000000) 
+  rm(AIScsvDF3)
   
   metadata$aton_mmsis <- length(unique(AIScsvDF2$MMSI))
   metadata$aton_pts <- length(AIScsvDF2$MMSI)
@@ -181,6 +187,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
     left_join(scrambleids, by="MMSI") %>% 
     dplyr::select(-MMSI) %>% 
     mutate(AIS_ID = paste0(scramblemmsi, year(Time), month(Time), day(Time)))
+  rm(AIScsvDF2)
   
   # Identify and remove frost flowers 
   # (i.e. multiple messages from the same exact location sporadically transmitted throughout the day)
@@ -192,6 +199,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   AISspeed4 <- AIScsvDF %>% 
     mutate(tempid = paste0(AIS_ID, Longitude, Latitude)) %>% 
     filter(!(tempid %in% ff$tempid))
+  rm(ff, AIScsvDF)
   
   runtimes$dftime <- (proc.time() - start)[[3]]/60
   
@@ -206,11 +214,13 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
     # project into Alaska Albers (or other CRS that doesn't create huge gap in mid-Bering with -180W and 180E)
     st_transform(crs=3338) %>%
     arrange(Time)
+  rm(AISspeed4)
   
   # Calculate the euclidean speed between points
   # Also remove successive duplicate points (i.e., same time stamp and/or same location)
   AISspeed3[, c("x", "y")] <- st_coordinates(AISspeed3)
   AISspeed2 <- AISspeed3 %>% 
+    # st_drop_geometry() %>% 
     group_by(AIS_ID) %>%
     arrange(AIS_ID, Time) %>% 
     mutate(timediff = as.numeric(difftime(Time,lag(Time),units=c("hours"))),
@@ -218,6 +228,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
     filter(timediff > 0) %>% 
     filter(distdiff > 0) %>% 
     mutate(speed = distdiff/timediff)
+  rm(AISspeed3)
   
   metadata$redund_aisids <- length(unique(AISspeed2$AIS_ID))
   metadata$redund_mmsi <- length(unique(AISspeed2$scramblemmsi))
@@ -227,6 +238,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   AISspeed1 <- AISspeed2 %>% 
     dplyr::filter(speed < 100) %>% 
     dplyr::filter(!is.na(speed))
+  rm(AISspeed2)
   
   metadata$speed_aisids <- length(unique(AISspeed1$AIS_ID))
   metadata$speed_mmsi <- length(unique(AISspeed1$scramblemmsi))
@@ -294,6 +306,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
     summarize(n=n()) %>% 
     dplyr::filter(n < 2)
   AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
+  rm(AISspeed1)
   
   metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
   metadata$short_mmsi <- length(unique(AISspeed$scramblemmsi))
@@ -363,9 +376,11 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
       st_make_valid() %>% 
       ungroup()
   }
+  rm(AISspeed)
   
   # Add in destination codes 
   AISsf <- AISsf1 %>% left_join(., dest, by=c("Destination" = "Destntn"))
+  rm(AISsf1)
   
   # Calculate total distance travelled
   AISsf$Length_Km <- as.numeric(st_length(AISsf)/1000)
@@ -389,6 +404,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
       # from trial and error, I think that this last "TRUE" serves as a catch-all, but I can't logically figure out why it works. -\__(%)__/-
       TRUE ~ "Other"
     ))  
+  rm(AISsf)
   
   nships <- AISjoined %>% 
     st_drop_geometry() %>% 
@@ -426,7 +442,8 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
     if(length(AISfilteredType$newsegid) > 0){
       write_sf(AISfilteredType,
                paste0("../Data_Processed/Vector/Tracks_DayNight", 
-                      daynight, "_",MoName,"-",allTypes[k],".shp"))
+                      daynight, "_",MoName,"-",allTypes[k],".shp"), 
+               overwrite=T)
     }
   }
   
