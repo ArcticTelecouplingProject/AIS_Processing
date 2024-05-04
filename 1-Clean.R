@@ -11,7 +11,7 @@ library(doParallel)
 start <- proc.time()
 
 # Import year from sb file 
-# year <- 2015
+# year <- 2018
 year <- commandArgs(trailingOnly = TRUE)
 
 # Load in files 
@@ -55,7 +55,7 @@ if(year %in% 2015:2020){
 # Create a list of lists of all csv file names grouped by month
 csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
 # csvsByMonth <- list(jun, jul, aug)
-# csvsByMonth <- list(jun[1:2])
+# csvsByMonth <- list(jul)
 
 flags <- read.csv("../Data_Raw/FlagCodes.csv")
 
