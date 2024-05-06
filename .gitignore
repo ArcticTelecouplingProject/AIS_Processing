@@ -1,5 +1,17 @@
+# RStudio files 
 .Rproj.user
+
+# History files 
 .Rhistory
+
+# Session files 
 .RData
+
+# User-specific files 
 .Ruserdata
+
+# Spatial files 
 .aprx
+
+# Scrambled MMSI generation script 
+0-MMSIScramble-DONOTSHARE.R 
