@@ -386,6 +386,9 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   # Calculate total distance travelled
   AISsf$Length_Km <- as.numeric(st_length(AISsf)/1000)
   
+  # Remove any non-linestring types if still remaining after st_make_valid
+  AISsf <- st_collection_extract(AISsf, "LINESTRING")
+  
   ##### Ship type ------------------------------------------------------
   start <- proc.time()
   
@@ -441,10 +444,10 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
     
     # Save data in vector format
     if(length(AISfilteredType$newsegid) > 0){
-      write_sf(AISfilteredType,
+      st_write(AISfilteredType,
                paste0("../Data_Processed/Vector/Tracks_DayNight", 
-                      daynight, "_",MoName,"-",allTypes[k],".shp"), 
-               overwrite=T)
+                      daynight, "_",MoName,"-",allTypes[k],".shp"),
+               append = F)
     }
   }
   
