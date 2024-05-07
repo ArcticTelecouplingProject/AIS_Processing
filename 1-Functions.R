@@ -187,7 +187,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   AIScsvDF <- AIScsvDF2  %>% 
     left_join(scrambleids, by="MMSI") %>% 
     dplyr::select(-MMSI) %>% 
-    mutate(AIS_ID = paste0(scramblemmsi, year(Time), month(Time), day(Time)))
+    mutate(AIS_ID = paste0(scramblemmsi,format(as.POSIXct(Time), "%Y%m%d"))) 
   rm(AIScsvDF2)
   
   # Identify and remove frost flowers 
