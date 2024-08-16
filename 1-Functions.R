@@ -278,7 +278,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
                                  POSIXct.out=TRUE)
     
     AISspeed1$solarpos <- solarpos[,2]
-    AISspeed1$timeofday <- as.factor(ifelse(AISspeed1$solarpos > 0, "day","night"))
+    AISspeed1$timeofday <- as.factor(ifelse(AISspeed1$solarpos > -6, "day","night"))
     
     AISspeed1$sunrise <- sunrise$time
     AISspeed1$sunset <- sunset$time
