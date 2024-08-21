@@ -11,12 +11,12 @@ library(doParallel)
 start <- proc.time()
 
 # Import year from sb file 
-# year <- 2018
+# year <- 2021
 year <- commandArgs(trailingOnly = TRUE)
 
 # Load in files 
 if(year %in% c(2021:2022)){
-  # dir <- "D:/NSF_AIS_2021-2022/2021/"
+  # dir <- paste0("D:/NSF_AIS_2021-2022/", year, "/")
   dir <- paste0("../Data_Raw/", year, "/")
   files <- paste0(dir, list.files(dir, pattern='.csv'))
   # Separate file names into monthly lists
@@ -64,7 +64,7 @@ scrambleids <- read.csv("../Data_Raw/ScrambledMMSI_Keys_2015-2022.csv") %>%
 
 dest <- read.csv("../Data_Raw/Destination_Recoding.csv")
 
-daynight <- FALSE
+hexgrid <- st_read("../Data_Raw/BlankHexes.shp")
 
 # Load functions
 source("1-Functions.R")
@@ -82,12 +82,13 @@ res=list()
 # I'm using tidyverse since it combines dplyr and tidyr into one library (I think)
 res=foreach(i=1:length(csvsByMonth),.packages=c("tidyverse", "sf", "doParallel", "stringi"),
             .errorhandling='pass',.verbose=T,.multicombine=TRUE) %dopar% 
-  clean_and_vectorize(csvList=csvsByMonth[[i]], 
+  clean_and_transform(csvList=csvsByMonth[[i]], 
                       flags=flags, 
                       scrambleids=scrambleids,
                       dest=dest, 
-                      daynight=FALSE)
-# lapply(csvsByMonth, FWS.AIS)
+                      daynight=TRUE, 
+                      output = "hex",
+                      hexgrid = hexgrid)
 
 # Elapsed time and running information
 tottime <- proc.time() - start

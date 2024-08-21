@@ -1,4 +1,4 @@
-clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
+clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, output, hexgrid=NA){
   
   # profvis({
   # Start overall timer 
@@ -146,7 +146,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
     AIScsv <- left_join(AIScsv_pos, AIScsv_stat, 
                         by = join_by(MMSI, closest(Time >= Time)), 
                         multiple="first") %>% 
-      mutate(Time = Time.x) %>% 
+      rename(Time = Time.x) %>% 
       dplyr::select(-Time.y)
     rm(AIScsv_pos, AIScsv_stat)
   }
@@ -263,34 +263,41 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   # Calculate whether points are occurring during daytime or at night 
   if(daynight==TRUE){
     print(paste("Spatial ",yr, mnth))
-    temp <- st_coordinates(st_transform(AISspeed1, 4326))
+    
+    temp <- AISspeed1 %>%   
+      st_as_sf(coords=c("x","y"),crs=3338) %>%
+      st_transform(4326) %>% 
+      st_coordinates()
     
     solarpos <- maptools::solarpos(temp, 
                                    dateTime=AISspeed1$Time, 
                                    POSIXct.out=TRUE)
-    sunrise <- maptools::sunriset(temp, 
-                                  dateTime=AISspeed1$Time, 
-                                  direction="sunrise", 
-                                  POSIXct.out=TRUE)
-    sunset <- maptools::sunriset(temp, 
-                                 dateTime=AISspeed1$Time, 
-                                 direction="sunset", 
-                                 POSIXct.out=TRUE)
+    # sunrise <- maptools::sunriset(temp, 
+    #                               dateTime=AISspeed1$Time, 
+    #                               direction="sunrise", 
+    #                               POSIXct.out=TRUE)
+    # sunset <- maptools::sunriset(temp, 
+    #                              dateTime=AISspeed1$Time, 
+    #                              direction="sunset", 
+    #                              POSIXct.out=TRUE)
     
     AISspeed1$solarpos <- solarpos[,2]
     AISspeed1$timeofday <- as.factor(ifelse(AISspeed1$solarpos > -6, "day","night"))
     
-    AISspeed1$sunrise <- sunrise$time
-    AISspeed1$sunset <- sunset$time
+    # AISspeed1$sunrise <- sunrise$time
+    # AISspeed1$sunset <- sunset$time
     AISspeed1$newseg[which(AISspeed1$timeofday != dplyr::lag(AISspeed1$timeofday))] <- 1
+    
     temp <- AISspeed1 %>% 
       st_drop_geometry() %>% 
       dplyr::select(AIS_ID, newseg, timeofday) %>% 
       group_by(AIS_ID) %>% 
       mutate(newseg = cumsum(newseg))
+    
     print(paste("Sunrise",yr, mnth))
   }
   if(daynight==FALSE){
+    
     temp <- AISspeed1 %>% 
       dplyr::select(AIS_ID, newseg) %>% 
       group_by(AIS_ID) %>% 
@@ -304,6 +311,7 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
     group_by(newsegid) %>% 
     summarize(n=n()) %>% 
     dplyr::filter(n < 2)
+  
   AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
   rm(AISspeed1)
   
@@ -315,155 +323,379 @@ clean_and_vectorize <- function(csvList, flags, scrambleids, dest, daynight){
   
   print(paste("Finished Speed filter ",yr, mnth))
   
-  ##### Vectorization  ------------------------------------------------------
   
-  start <- proc.time()
-  
-  # create sf lines by sorted / grouped points
-  if(daynight==TRUE){
-    AISsftemp <- AISspeed %>%
-      st_as_sf(coords=c("x","y"),crs=3338) %>%
-      arrange(Time) %>%
-      # create 1 line per AIS ID
-      group_by(newsegid) %>%
-      # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
-      summarize(scramblemmsi=first(scramblemmsi), 
-                Time_Of_Day=first(timeofday),
-                Time_Start = as.character(first(Time)), 
-                Time_End = as.character(last(Time)),
-                AIS_ID=first(AIS_ID), 
-                SOG_Median=median(SOG, na.rm=T), 
-                SOG_Mean=mean(SOG, na.rm=T), 
-                Ship_Type = first(Ship_Type, na_rm = T), 
-                Country = first(Country, na_rm = T),
-                Dim_Length = first(Dim_Length, na_rm = T), 
-                Dim_Width = first(Dim_Width, na_rm = T), 
-                Draught = first(Draught, na_rm = T), 
-                Destination = first(Destination, na_rm = T),
-                npoints=n(), 
-                do_union=FALSE)
-    AISsftempnew <- AISsftemp[AISsftemp$npoints > 1,]
+  ################################################################################
+  ##### Vectorize  ------------------------------------------------------
+  if(output == "vector"){
+    start <- proc.time()
     
-    metadata$daynightshort_aisids <- length(unique(AISsftempnew$AIS_ID))
-    metadata$daynightshort_mmsi <- length(unique(AISsftempnew$scramblemmsi))
+    # create sf lines by sorted / grouped points
+    if(daynight==TRUE){
+      
+      AISsftemp <- AISspeed %>%
+        st_as_sf(coords=c("x","y"),crs=3338) %>%
+        arrange(Time) %>%
+        # create 1 line per AIS ID
+        group_by(newsegid) %>%
+        # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
+        summarize(scramblemmsi=first(scramblemmsi), 
+                  Time_Of_Day=first(timeofday),
+                  Time_Start = as.character(first(Time)), 
+                  Time_End = as.character(last(Time)),
+                  AIS_ID=first(AIS_ID), 
+                  SOG_Median=median(SOG, na.rm=T), 
+                  SOG_Mean=mean(SOG, na.rm=T), 
+                  Ship_Type = first(Ship_Type, na_rm = T), 
+                  Country = first(Country, na_rm = T),
+                  Dim_Length = first(Dim_Length, na_rm = T), 
+                  Dim_Width = first(Dim_Width, na_rm = T), 
+                  Draught = first(Draught, na_rm = T), 
+                  Destination = first(Destination, na_rm = T),
+                  npoints=n(), 
+                  do_union=FALSE)
+      AISsftempnew <- AISsftemp[AISsftemp$npoints > 1,]
+      
+      metadata$daynightshort_aisids <- length(unique(AISsftempnew$AIS_ID))
+      metadata$daynightshort_mmsi <- length(unique(AISsftempnew$scramblemmsi))
+      
+      AISsf1 <- AISsftempnew %>% 
+        st_cast("LINESTRING") %>% 
+        st_make_valid() %>% 
+        ungroup()
+    }
+    if(daynight==FALSE){
+      
+      AISsf1 <- AISspeed %>%
+        st_as_sf(coords=c("x","y"),crs=3338) %>%
+        arrange(Time) %>%
+        # create 1 line per AIS ID
+        group_by(newsegid) %>%
+        # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
+        summarize(scramblemmsi=first(scramblemmsi), 
+                  Time_Start = as.character(first(Time)), 
+                  Time_End = as.character(last(Time)),
+                  AIS_ID=first(AIS_ID), 
+                  SOG_Median=median(SOG, na.rm=T), 
+                  SOG_Mean=mean(SOG, na.rm=T), 
+                  Ship_Type = first(Ship_Type, na_rm = T), 
+                  Country = first(Country, na_rm = T),
+                  Dim_Length = first(Dim_Length, na_rm = T), 
+                  Dim_Width = first(Dim_Width, na_rm = T), 
+                  Draught = first(Draught, na_rm = T), 
+                  Destination = first(Destination, na_rm = T),
+                  npoints=n(), 
+                  do_union=FALSE) %>% 
+        st_cast("LINESTRING") %>% 
+        st_make_valid() %>% 
+        ungroup()
+    }
+    rm(AISspeed)
     
-    AISsf1 <- AISsftempnew %>% 
-      st_cast("LINESTRING") %>% 
-      st_make_valid() %>% 
-      ungroup()
+    # Add in destination codes 
+    AISsf <- AISsf1 %>% left_join(., dest, by=c("Destination" = "Destntn"))
+    rm(AISsf1)
+    
+    # Calculate total distance travelled
+    AISsf$Length_Km <- as.numeric(st_length(AISsf)/1000)
+    
+    # Remove any non-linestring types if still remaining after st_make_valid
+    AISsf <- st_collection_extract(AISsf, "LINESTRING")
+    
+    ##### Ship type ------------------------------------------------------
+    start <- proc.time()
+    
+    # Split lines by ship type
+    # link to ship type/numbers table: 
+    # https://help.marinetraffic.com/hc/en-us/articles/205579997-What-is-the-significance-of-the-AIS-Shiptype-number-
+    AISjoined <- AISsf %>%
+      mutate(AIS_Type = case_when(
+        is.na(AISsf$Ship_Type) ~ "Other",
+        substr(AISsf$Ship_Type,1,2)==30 ~ "Fishing",
+        substr(AISsf$Ship_Type,1,2)%in% c(31, 32, 52) ~ "TugTow",
+        substr(AISsf$Ship_Type,1,1)==6 ~ "Passenger",
+        substr(AISsf$Ship_Type,1,2)==36 ~ "Sailing",
+        substr(AISsf$Ship_Type,1,2)==37 ~ "Pleasure",
+        substr(AISsf$Ship_Type,1,1)==7 ~ "Cargo",
+        substr(AISsf$Ship_Type,1,1)==8 ~ "Tanker",
+        # from trial and error, I think that this last "TRUE" serves as a catch-all, but I can't logically figure out why it works. -\__(%)__/-
+        TRUE ~ "Other"
+      ))  
+    rm(AISsf)
+    
+    nships <- AISjoined %>% 
+      st_drop_geometry() %>% 
+      group_by(AIS_Type) %>% 
+      summarize(n=length(unique(scramblemmsi)))
+    
+    metadata$ntank_mmsis <- nships$n[nships$AIS_Type == "Tanker"]
+    metadata$ntug_mmsis <- nships$n[nships$AIS_Type == "TugTow"]
+    metadata$npass_mmsis <-nships$n[nships$AIS_Type == "Passenger"]
+    metadata$nsail_mmsis <-nships$n[nships$AIS_Type == "Sailing"]
+    metadata$npleas_mmsis <-nships$n[nships$AIS_Type == "Pleasure"]
+    metadata$nfish_mmsis <- nships$n[nships$AIS_Type == "Fishing"]
+    metadata$ncargo_mmsis <- nships$n[nships$AIS_Type == "Cargo"]
+    metadata$nother_mmsis <- nships$n[nships$AIS_Type == "Other"]
+    metadata$ntotal_mmsis <- sum(nships$n)
+    metadata$totallength_km <- sum(AISjoined$Length_Km)
+    
+    runtimes$jointime <- (proc.time() - start)[[3]]/60
+    
+    print(paste("Finished Static/Position Join ",yr, mnth))
+    
+    ##### Save outputs ------------------------------------------------------
+    
+    start <- proc.time()
+    
+    # Loop through each ship type, rasterize, and save shp file as well 
+    allTypes <- unique(AISjoined$AIS_Type)
+    
+    for (k in 1:length(allTypes)){
+      
+      AISfilteredType <- AISjoined %>%
+        filter(AIS_Type==allTypes[k])
+      
+      # Save data in vector format
+      if(length(AISfilteredType$newsegid) > 0){
+        st_write(AISfilteredType,
+                 paste0("../Data_Processed/Vector/Tracks_DayNight", 
+                        daynight, "_",MoName,"-",allTypes[k],".shp"),
+                 append = F)
+      }
+    }
+    
+    # Save processing info to text file 
+    runtimes$vectortime <- (proc.time() - start)[[3]]/60
+    
+    runtime <- proc.time() - starttime 
+    runtimes$runtime_min <- runtime[[3]]/60 
+    
+    write.csv(metadata, paste0("../Data_Processed/Metadata/Metadata_DayNight", 
+                               daynight, "_", MoName,".csv"))
+    
+    write.csv(runtimes, paste0("../Data_Processed/Metadata/Runtimes_DayNight", 
+                               daynight, "_",MoName,".csv"))
+    print(runtimes)
+    
+    # })
+    return(runtimes)
   }
-  if(daynight==FALSE){
-    AISsf1 <- AISspeed %>%
-      st_as_sf(coords=c("x","y"),crs=3338) %>%
-      arrange(Time) %>%
-      # create 1 line per AIS ID
-      group_by(newsegid) %>%
-      # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
-      summarize(scramblemmsi=first(scramblemmsi), 
-                Time_Start = as.character(first(Time)), 
-                Time_End = as.character(last(Time)),
-                AIS_ID=first(AIS_ID), 
-                SOG_Median=median(SOG, na.rm=T), 
-                SOG_Mean=mean(SOG, na.rm=T), 
-                Ship_Type = first(Ship_Type, na_rm = T), 
-                Country = first(Country, na_rm = T),
-                Dim_Length = first(Dim_Length, na_rm = T), 
-                Dim_Width = first(Dim_Width, na_rm = T), 
-                Draught = first(Draught, na_rm = T), 
-                Destination = first(Destination, na_rm = T),
-                npoints=n(), 
-                do_union=FALSE) %>% 
-      st_cast("LINESTRING") %>% 
-      st_make_valid() %>% 
-      ungroup()
-  }
-  rm(AISspeed)
   
-  # Add in destination codes 
-  AISsf <- AISsf1 %>% left_join(., dest, by=c("Destination" = "Destntn"))
-  rm(AISsf1)
-  
-  # Calculate total distance travelled
-  AISsf$Length_Km <- as.numeric(st_length(AISsf)/1000)
-  
-  # Remove any non-linestring types if still remaining after st_make_valid
-  AISsf <- st_collection_extract(AISsf, "LINESTRING")
-  
-  ##### Ship type ------------------------------------------------------
-  start <- proc.time()
-  
-  # Split lines by ship type
-  # link to ship type/numbers table: 
-  # https://help.marinetraffic.com/hc/en-us/articles/205579997-What-is-the-significance-of-the-AIS-Shiptype-number-
-  AISjoined <- AISsf %>%
-    mutate(AIS_Type = case_when(
-      is.na(AISsf$Ship_Type) ~ "Other",
-      substr(AISsf$Ship_Type,1,2)==30 ~ "Fishing",
-      substr(AISsf$Ship_Type,1,2)%in% c(31, 32, 52) ~ "TugTow",
-      substr(AISsf$Ship_Type,1,1)==6 ~ "Passenger",
-      substr(AISsf$Ship_Type,1,2)==36 ~ "Sailing",
-      substr(AISsf$Ship_Type,1,2)==37 ~ "Pleasure",
-      substr(AISsf$Ship_Type,1,1)==7 ~ "Cargo",
-      substr(AISsf$Ship_Type,1,1)==8 ~ "Tanker",
-      # from trial and error, I think that this last "TRUE" serves as a catch-all, but I can't logically figure out why it works. -\__(%)__/-
-      TRUE ~ "Other"
-    ))  
-  rm(AISsf)
-  
-  nships <- AISjoined %>% 
-    st_drop_geometry() %>% 
-    group_by(AIS_Type) %>% 
-    summarize(n=length(unique(scramblemmsi)))
-  
-  metadata$ntank_mmsis <- nships$n[nships$AIS_Type == "Tanker"]
-  metadata$ntug_mmsis <- nships$n[nships$AIS_Type == "TugTow"]
-  metadata$npass_mmsis <-nships$n[nships$AIS_Type == "Passenger"]
-  metadata$nsail_mmsis <-nships$n[nships$AIS_Type == "Sailing"]
-  metadata$npleas_mmsis <-nships$n[nships$AIS_Type == "Pleasure"]
-  metadata$nfish_mmsis <- nships$n[nships$AIS_Type == "Fishing"]
-  metadata$ncargo_mmsis <- nships$n[nships$AIS_Type == "Cargo"]
-  metadata$nother_mmsis <- nships$n[nships$AIS_Type == "Other"]
-  metadata$ntotal_mmsis <- sum(nships$n)
-  metadata$totallength_km <- sum(AISjoined$Length_Km)
-  
-  runtimes$jointime <- (proc.time() - start)[[3]]/60
-  
-  print(paste("Finished Static/Position Join ",yr, mnth))
-  
-  ##### Save outputs ------------------------------------------------------
-  
-  start <- proc.time()
-  
-  # Loop through each ship type, rasterize, and save shp file as well 
-  allTypes <- unique(AISjoined$AIS_Type)
-  
-  for (k in 1:length(allTypes)){
+  ################################################################################
+  ##### Hex  ------------------------------------------------------
+  if(output == "hex"){
+    # HEX CODE HERE
+    # Calculate number of ships with 0 values in dimensions and convert to NA
+    metadata$nolength <- length(which(is.na(AISspeed$Dim_Length)))
+    zerolength <- which(AISspeed$Dim_Length == 0)
+    metadata$pctzerolength <- round((metadata$nolength + length(zerolength))/length(AISspeed$Dim_Length)*100,2)
     
-    AISfilteredType <- AISjoined %>%
-      filter(AIS_Type==allTypes[k])
+    metadata$nowidth <- length(which(is.na(AISspeed$Dim_Width)))
+    zerowidth <- which(AISspeed$Dim_Width == 0)
+    metadata$pctzerowidth <- round((metadata$nowidth + length(zerowidth))/length(AISspeed$Dim_Width)*100,2)
+    
+    # Remove zero value rows for consideration of respective measurement
+    # (i.e. if either bow or stern is zero, then both get NA 
+    # and if either port or starboard is zero then both get NA)
+    AISspeed$Dim_Length[zerolength] <- NA
+    AISspeed$Dim_Width[zerowidth] <- NA
+    
+    ##### Ship type ------------------------------------------------------
+    start <- proc.time()
+    
+    # Make points spatial, ID ship type, and join to hex grid 
+    # link to ship type/numbers table: 
+    # https://help.marinetraffic.com/hc/en-us/articles/205579997-What-is-the-significance-of-the-AIS-Shiptype-number-
+    AISjoined <- AISspeed %>%
+      st_as_sf(coords=c("x","y"),crs=3338) %>% 
+      st_join(hexgrid["hexID"]) %>% 
+      mutate(AIS_Type = case_when(
+        is.na(AISspeed$Ship_Type) ~ "Other",
+        substr(AISspeed$Ship_Type,1,2)==30 ~ "Fishing",
+        substr(AISspeed$Ship_Type,1,2)%in% c(31, 32, 52) ~ "TugTow",
+        substr(AISspeed$Ship_Type,1,1)==6 ~ "Passenger",
+        substr(AISspeed$Ship_Type,1,2)==36 ~ "Sailing",
+        substr(AISspeed$Ship_Type,1,2)==37 ~ "Pleasure",
+        substr(AISspeed$Ship_Type,1,1)==7 ~ "Cargo",
+        substr(AISspeed$Ship_Type,1,1)==8 ~ "Tanker",
+        TRUE ~ "Other"
+      ))  
+    rm(AISspeed)
+    
+    nships <- AISjoined %>% 
+      group_by(AIS_Type) %>% 
+      summarize(n=length(unique(scramblemmsi)))
+    
+    metadata$ntank_mmsis <- nships$n[nships$AIS_Type == "Tanker"]
+    metadata$ntug_mmsis <- nships$n[nships$AIS_Type == "TugTow"]
+    metadata$npass_mmsis <-nships$n[nships$AIS_Type == "Passenger"]
+    metadata$nsail_mmsis <-nships$n[nships$AIS_Type == "Sailing"]
+    metadata$npleas_mmsis <-nships$n[nships$AIS_Type == "Pleasure"]
+    metadata$nfish_mmsis <- nships$n[nships$AIS_Type == "Fishing"]
+    metadata$ncargo_mmsis <- nships$n[nships$AIS_Type == "Cargo"]
+    metadata$nother_mmsis <- nships$n[nships$AIS_Type == "Other"]
+    metadata$ntotal_mmsis <- sum(nships$n)
+
+    
+    runtimes$jointime <- (proc.time() - start)[[3]]/60
+    
+
+    
+    # Thrown out for missing/incorrect lat/lon/MMSI, duplicate points, speed > 100 km/hr, outisde hex grid
+    metadata$pctmissingwidth <- round(sum(is.na(AISjoined$Dim_Width))/length(AISjoined$Dim_Width)*100, 2)
+    metadata$ pctmissinglength <- round(sum(is.na(AISjoined$Dim_Length))/length(AISjoined$Dim_Length)*100, 2)
+    metadata$pctmissingSOG <-  round(sum(is.na(AISjoined$SOG))/length(AISjoined$Dim_Length)*100, 2)
+    
+    # # Loop through each ship type and calculate summary statistics
+    allTypes <- unique(AISjoined$AIS_Type)
+    
+    
+    # Calculate summary stats for each ship type
+    for (k in 1:length(allTypes)){
+      # Select ship type
+      AISfilteredType <- AISjoined %>%
+        filter(AIS_Type==allTypes[k])
+      
+      if(daynight == TRUE){
+        
+        # Calculate total number of hours of daytime and nighttime transmissions 
+        # for each unique ship in each day in each hex
+        # This method accounts for high latitude days where days may extend past midnight. 
+        AIShours <- AISfilteredType %>% 
+          st_drop_geometry() %>% 
+          arrange(Time) %>% # arrange by time 
+          # Create new sequence of row numbers for each unique day/ship/hex/timeofday combo
+          group_by(AIS_ID, hexID, scramblemmsi,timeofday) %>% 
+          mutate(rownum = 1:n()) %>%
+          ungroup()
+        # ID first signal in each of the above ID'd sequences
+        AIShours <- AIShours %>% mutate(daychange=ifelse(rownum == 1, 1, 0))
+        
+        AIShoursums <- AIShours %>% 
+          # Remove these signals because there was at least one change in day/ship/hex/timeofday
+          # between the signals and so we don't wnat to use the time diff value in our total 
+          # time calculation below. 
+          filter(daychange != 1) %>% 
+          group_by(AIS_ID, hexID, scramblemmsi, timeofday) %>% 
+          # Calculate the total amount of time in each unique day/ship/hex/timeofday state 
+          summarize(Hrs = sum(timediff)) 
+        
+        nightHrs <- AIShoursums %>% 
+          filter(timeofday == "night") %>% 
+          group_by(hexID) %>% 
+          summarize(N_Hrs = round(sum(Hrs, na.rm=T), 2),
+                    N_nShp=length(unique(scramblemmsi)),
+                    N_OpD=length(unique(AIS_ID)))
+        
+        dayHrs <- AIShoursums %>% 
+          filter(timeofday == "day") %>% 
+          group_by(hexID) %>% 
+          summarize(D_Hrs = round(sum(Hrs, na.rm=T), 2),
+                    D_nShp=length(unique(scramblemmsi)),
+                    D_OpD=length(unique(AIS_ID)))
+        
+
+        joinOut <- left_join(dayHrs, nightHrs, by=c("hexID"))
+        joinOut <- joinOut %>% 
+          mutate_at(c(1:ncol(joinOut)), ~replace_na(.,0))
+      }
+        
+        # Hrs will not be the sum of day and night hrs because it includes 
+        # the transition intervals (e.g., between day and night)
+        joinOutNew <- AISfilteredType %>%
+          st_drop_geometry() %>% 
+          group_by(hexID) %>%
+          summarize(Hrs=round(sum(timediff, na.rm=T), 2),
+                    nShp=length(unique(scramblemmsi)),
+                    OpD=length(unique(AIS_ID)))
+        if(daynight == T){
+          joinOutNew <- left_join(joinOutNew, joinOut)
+        }
+      
+      colnames(joinOutNew)[2:ncol(joinOutNew)] <- paste0(colnames(joinOutNew)[2:ncol(joinOutNew)],"_",substring(allTypes[k],1,2))
+      
+      hexgrid <- left_join(hexgrid, joinOutNew, by="hexID")
+    }
+    
+    if(daynight == TRUE){
+      # Calculate summary stats for all ship types in aggregate
+      # Calculate average speed within hex grid 
+      # Calculate total number of hours of daytime and nighttime transmissions 
+      # for each unique ship in each day in each hex
+      # This method accounts for high latitude days where days may extend past midnight. 
+      TotAIShours <- AISjoined %>% 
+        st_drop_geometry() %>% 
+        arrange(Time) %>% # arrange by time 
+        # Create new sequence of row numbers for each unique day/ship/hex/timeofday combo
+        group_by(AIS_ID, hexID, scramblemmsi,timeofday) %>% 
+        mutate(rownum = 1:n()) %>%
+        ungroup()
+      # ID first signal in each of the above ID'd sequences
+      TotAIShours <- TotAIShours %>% mutate(daychange=ifelse(rownum == 1, 1, 0))
+      
+      TotAIShoursums <- TotAIShours %>% 
+        # Remove these signals because there was at least one change in day/ship/hex/timeofday
+        # between the signals and so we don't wnat to use the time diff value in our total 
+        # time calculation below. 
+        filter(daychange != 1) %>% 
+        group_by(AIS_ID, hexID, scramblemmsi, timeofday) %>% 
+        # Calculate the total amount of time in each unique day/ship/hex/timeofday state 
+        summarize(Hrs = sum(timediff)) 
+      
+      TotnightHrs <- TotAIShoursums %>% 
+        filter(timeofday == "night") %>% 
+        group_by(hexID) %>% 
+        summarize(N_Hrs = round(sum(Hrs, na.rm=T), 2),
+                  N_nShp=length(unique(scramblemmsi)),
+                  N_OpD=length(unique(AIS_ID)))
+      
+      TotdayHrs <- TotAIShoursums %>% 
+        filter(timeofday == "day") %>% 
+        group_by(hexID) %>% 
+        summarize(D_Hrs = round(sum(Hrs, na.rm=T), 2),
+                  D_nShp=length(unique(scramblemmsi)),
+                  D_OpD=length(unique(AIS_ID)))
+    }
+    TotalHrs <- AISjoined %>%
+      st_drop_geometry() %>% 
+      group_by(hexID) %>%
+      summarize(Hrs=round(sum(timediff, na.rm=T), 2),
+                nShp=length(unique(scramblemmsi)),
+                OpD=length(unique(AIS_ID)))
+    if(daynight == TRUE){
+      allShipsNew <- left_join(TotalHrs, TotnightHrs, by=c("hexID"))
+      allShipsNew <- left_join(allShipsNew, TotdayHrs, by=c("hexID"))
+    }else(allShipsNew <- TotalHrs)
+    
+    colnames(allShipsNew)[2:ncol(allShipsNew)] <- paste0(colnames(allShipsNew)[2:ncol(allShipsNew)],"_Al")
+    
+    hexgrid <- left_join(hexgrid, allShipsNew, by="hexID")
+    
+    hexgrid$year <- yr
+    hexgrid$month <- mnth
+    
+    print(paste("Finished hex calcs ",yr, mnth))
+    # hexpts <- st_as_sf(AISjoined, coords = c("x", "y"), crs = 3338)
     
     # Save data in vector format
-    if(length(AISfilteredType$newsegid) > 0){
-      st_write(AISfilteredType,
-               paste0("../Data_Processed/Vector/Tracks_DayNight", 
-                      daynight, "_",MoName,"-",allTypes[k],".shp"),
-               append = F)
-    }
+    write_sf(hexgrid, paste0("../Data_Processed/Hex/Hex_",MoName,"_DayNight",daynight,".shp"))
+    # write_sf(AISjoined, paste0("../Data_Processed_TEST/Hex/SpeedPts_",MoName,"_",ndays,".shp"))
+    # write_sf(hexpts, paste0("../Data_Processed_TEST/Hex/SpeedPts_",MoName,".shp"))
+    
+    
+    # Save processing info to text file 
+    runtimes$hextime <- (proc.time() - start)[[3]]/60
+    
+    runtimes$runtime <- (proc.time() - starttime)[[3]]
+    runtimes$runtime_min <- runtimes$runtime/60 
+    
+    write.csv(metadata, paste0("../Data_Processed/Hex/HexMetadata_",MoName,"_DayNight",daynight,".csv"))
+    
+    
+    write.csv(runtimes, paste0("../Data_Processed/Hex/HexRuntimes_",MoName,"_DayNight",daynight,".csv"))
+    # write.csv(runtimes, paste0("../Data_Processed_TEST/Hex/Runtimes_SpeedHex_",MoName,"_",ndays,".csv"))
+    # print(runtimes)
+    # return(runtimes)
   }
-  
-  # Save processing info to text file 
-  runtimes$vectortime <- (proc.time() - start)[[3]]/60
-  
-  runtime <- proc.time() - starttime 
-  runtimes$runtime_min <- runtime[[3]]/60 
-  
-  write.csv(metadata, paste0("../Data_Processed/Metadata/Metadata_DayNight", 
-                             daynight, "_", MoName,".csv"))
-  
-  write.csv(runtimes, paste0("../Data_Processed/Metadata/Runtimes_DayNight", 
-                             daynight, "_",MoName,".csv"))
-  print(runtimes)
-  
-# })
-  return(runtimes)
-}
+  }
+
+
