@@ -55,7 +55,7 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
   )
   
   AIScsv <- do.call(rbind , temp)
-  rm(temp)
+  # rm(temp)
   
   # Rename columns in new data to match old data 
   if(year %in% c(2021:2022)){
@@ -239,7 +239,7 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
   AISspeed1 <- AISspeed2 %>% 
     dplyr::filter(speed < 100) %>% 
     dplyr::filter(!is.na(speed))
-  rm(AISspeed2)
+  # rm(AISspeed2)
   
   metadata$speed_aisids <- length(unique(AISspeed1$AIS_ID))
   metadata$speed_mmsi <- length(unique(AISspeed1$scramblemmsi))
@@ -254,17 +254,37 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
            distdiff = sqrt((y-lag(y))^2 + (x-lag(x))^2)/1000) %>% 
     ungroup()
   
-  AISspeed1$newseg <- ifelse(AISspeed1$timediff > 6, 1,
-                             ifelse(AISspeed1$distdiff > 60, 1, 0))
+  AISspeed1$status_change <- ifelse(AISspeed1$timediff > 6, TRUE,
+                             ifelse(AISspeed1$distdiff > 60, TRUE, FALSE))
   
-  # Create new ID for each segment 
-  AISspeed1$newseg[is.na(AISspeed1$newseg)] <- 1
+  # Indicate new segment for first point in each line  
+  AISspeed1$status_change[is.na(AISspeed1$status_change)] <- TRUE
+  
+  # Calculate 10-point rolling average for the speed column
+  test <- AISspeed1 %>% 
+    arrange(by=Time) %>%
+    group_by(scramblemmsi) %>% 
+    nest() %>% 
+    mutate(
+      # Apply mutate to each nested data frame
+      data = map(data, ~ .x %>%  # .x refers to each nested data frame
+                   mutate(rolling_avg = rollmean(SOG, k = 10, fill = 999, align = "right"), 
+                          stopped_navstat = ifelse(Navigational_status %in% c(1, 5, 6), 1, 0), 
+                          # Only if a ship is below the speed threshold for at least 3 consecutive signals will it be "stopped"
+                          stopped_sog = ifelse(SOG < 1 & lead(SOG) < 1, 1, 0),
+                          # Create a flag for when either navigational_status or stopped_sog changes
+                          status_change = ifelse(stopped_navstat != lag(stopped_navstat, default = first(stopped_navstat)) |
+                                                   stopped_sog != lag(stopped_sog, default = first(stopped_sog)), 
+                                                 TRUE, status_change))
+      )
+    ) %>% 
+    unnest(data)
   
   # Calculate whether points are occurring during daytime or at night 
   if(daynight==TRUE){
     print(paste("Spatial ",yr, mnth))
     
-    temp <- AISspeed1 %>%   
+    temp <- test %>%   
       st_as_sf(coords=c("x","y"),crs=3338) %>%
       st_transform(4326) %>% 
       st_coordinates()
@@ -272,48 +292,31 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
     solarpos <- maptools::solarpos(temp, 
                                    dateTime=AISspeed1$Time, 
                                    POSIXct.out=TRUE)
-    # sunrise <- maptools::sunriset(temp, 
-    #                               dateTime=AISspeed1$Time, 
-    #                               direction="sunrise", 
-    #                               POSIXct.out=TRUE)
-    # sunset <- maptools::sunriset(temp, 
-    #                              dateTime=AISspeed1$Time, 
-    #                              direction="sunset", 
-    #                              POSIXct.out=TRUE)
-    
-    AISspeed1$solarpos <- solarpos[,2]
-    AISspeed1$timeofday <- as.factor(ifelse(AISspeed1$solarpos > -6, "day","night"))
-    
-    # AISspeed1$sunrise <- sunrise$time
-    # AISspeed1$sunset <- sunset$time
-    AISspeed1$newseg[which(AISspeed1$timeofday != dplyr::lag(AISspeed1$timeofday))] <- 1
-    
-    temp <- AISspeed1 %>% 
-      st_drop_geometry() %>% 
-      dplyr::select(AIS_ID, newseg, timeofday) %>% 
-      group_by(AIS_ID) %>% 
-      mutate(newseg = cumsum(newseg))
+
+    test$solarpos <- solarpos[,2]
+    test$timeofday <- as.factor(ifelse(test$solarpos > -6, "day","night"))
+
+    test$status_change[which(test$timeofday != dplyr::lag(test$timeofday))] <- TRUE
     
     print(paste("Sunrise",yr, mnth))
   }
-  if(daynight==FALSE){
-    
-    temp <- AISspeed1 %>% 
-      dplyr::select(AIS_ID, newseg) %>% 
-      group_by(AIS_ID) %>% 
-      mutate(newseg = cumsum(newseg))
-  }
   
-  AISspeed1$newsegid <- stringi::stri_c(AISspeed1$AIS_ID,  temp$newseg, sep = "")
+  
+  test <- test %>% group_by(scramblemmsi) %>% 
+    # 
+    mutate(newseg = cumsum(lag(status_change, default = FALSE)), 
+           # newseg = ifelse(newseg == 0, 1, newseg), 
+           # Create a group ID for each set of consecutive points based on scramblemmsi and status_change
+           newsegid = stringi::stri_c(AIS_ID,  newseg, sep = ""))
   
   # Remove segments with only one point (can't be made into lines)
-  shortids <- AISspeed1 %>% 
+  shortids <- test %>% 
     group_by(newsegid) %>% 
     summarize(n=n()) %>% 
     dplyr::filter(n < 2)
   
-  AISspeed <- AISspeed1[!(AISspeed1$newsegid %in% shortids$newsegid),]
-  rm(AISspeed1)
+  AISspeed <- test[!(test$newsegid %in% shortids$newsegid),]
+  # rm(AISspeed1)
   
   metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
   metadata$short_mmsi <- length(unique(AISspeed$scramblemmsi))
@@ -334,9 +337,10 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
       
       AISsftemp <- AISspeed %>%
         st_as_sf(coords=c("x","y"),crs=3338) %>%
-        arrange(Time) %>%
         # create 1 line per AIS ID
         group_by(newsegid) %>%
+        # group_by(newsegid, stopped_navstat, stopped_sog) %>%
+        arrange(Time) %>% 
         # keep MMSI for lookup / just in case; do_union is necessary for some reason, otherwise it throws an error
         summarize(scramblemmsi=first(scramblemmsi), 
                   Time_Of_Day=first(timeofday),
@@ -351,17 +355,19 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
                   Dim_Width = first(Dim_Width, na_rm = T), 
                   Draught = first(Draught, na_rm = T), 
                   Destination = first(Destination, na_rm = T),
+                  stopped_sog = first(stopped_sog, na_rm = T), 
+                  stopped_navstat = first(stopped_navstat, na_rm = T),
                   npoints=n(), 
-                  do_union=FALSE)
-      AISsftempnew <- AISsftemp[AISsftemp$npoints > 1,]
+                  do_union=FALSE, 
+                  geometry = st_combine(geometry)) %>% 
+        mutate(geometry = st_cast(geometry, "LINESTRING")) %>% 
+        ungroup() %>% 
+        st_make_valid()
       
-      metadata$daynightshort_aisids <- length(unique(AISsftempnew$AIS_ID))
-      metadata$daynightshort_mmsi <- length(unique(AISsftempnew$scramblemmsi))
+      AISsf1 <- AISsftemp[AISsftemp$npoints > 1,]
       
-      AISsf1 <- AISsftempnew %>% 
-        st_cast("LINESTRING") %>% 
-        st_make_valid() %>% 
-        ungroup()
+      metadata$daynightshort_aisids <- length(unique(AISsf1$AIS_ID))
+      metadata$daynightshort_mmsi <- length(unique(AISsf1$scramblemmsi))
     }
     if(daynight==FALSE){
       
@@ -383,17 +389,18 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
                   Dim_Width = first(Dim_Width, na_rm = T), 
                   Draught = first(Draught, na_rm = T), 
                   Destination = first(Destination, na_rm = T),
+                  stopped_sog = first(stopped_sog, na_rm = T), 
+                  stopped_navstat = first(stopped_navstat, na_rm = T),
                   npoints=n(), 
-                  do_union=FALSE) %>% 
-        st_cast("LINESTRING") %>% 
-        st_make_valid() %>% 
+                  geometry = st_combine(geometry)) %>% 
+        mutate(geometry = st_cast(geometry, "LINESTRING")) %>% 
         ungroup()
     }
-    rm(AISspeed)
+    # rm(AISspeed)
     
     # Add in destination codes 
     AISsf <- AISsf1 %>% left_join(., dest, by=c("Destination" = "Destntn"))
-    rm(AISsf1)
+    # rm(AISsf1)
     
     # Calculate total distance travelled
     AISsf$Length_Km <- as.numeric(st_length(AISsf)/1000)
@@ -420,7 +427,7 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
         # from trial and error, I think that this last "TRUE" serves as a catch-all, but I can't logically figure out why it works. -\__(%)__/-
         TRUE ~ "Other"
       ))  
-    rm(AISsf)
+    # rm(AISsf)
     
     nships <- AISjoined %>% 
       st_drop_geometry() %>% 
@@ -519,7 +526,7 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
         substr(AISspeed$Ship_Type,1,1)==8 ~ "Tanker",
         TRUE ~ "Other"
       ))  
-    rm(AISspeed)
+    # rm(AISspeed)
     
     nships <- AISjoined %>% 
       group_by(AIS_Type) %>% 
