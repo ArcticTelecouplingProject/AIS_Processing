@@ -254,31 +254,33 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
            distdiff = sqrt((y-lag(y))^2 + (x-lag(x))^2)/1000) %>% 
     ungroup()
   
-  AISspeed1$status_change <- ifelse(AISspeed1$timediff > 6, TRUE,
+  AISspeed1$cut_line <- ifelse(AISspeed1$timediff > 6, TRUE,
                              ifelse(AISspeed1$distdiff > 60, TRUE, FALSE))
   
   # Indicate new segment for first point in each line  
-  AISspeed1$status_change[is.na(AISspeed1$status_change)] <- TRUE
+  AISspeed1$cut_line[is.na(AISspeed1$cut_line)] <- TRUE
   
   # Calculate 10-point rolling average for the speed column
   test <- AISspeed1 %>% 
     arrange(by=Time) %>%
-    group_by(scramblemmsi) %>% 
-    nest() %>% 
+    group_by(scramblemmsi) %>%
     mutate(
-      # Apply mutate to each nested data frame
-      data = map(data, ~ .x %>%  # .x refers to each nested data frame
-                   mutate(rolling_avg = rollmean(SOG, k = 10, fill = 999, align = "right"), 
-                          stopped_navstat = ifelse(Navigational_status %in% c(1, 5, 6), 1, 0), 
-                          # Only if a ship is below the speed threshold for at least 3 consecutive signals will it be "stopped"
-                          stopped_sog = ifelse(SOG < 1 & lead(SOG) < 1, 1, 0),
-                          # Create a flag for when either navigational_status or stopped_sog changes
-                          status_change = ifelse(stopped_navstat != lag(stopped_navstat, default = first(stopped_navstat)) |
-                                                   stopped_sog != lag(stopped_sog, default = first(stopped_sog)), 
-                                                 TRUE, status_change))
-      )
-    ) %>% 
-    unnest(data)
+      # Step 1: Create a logical vector for each ship if SOG is below 2 knots
+      below_threshold = SOG < 2,
+      
+      # Step 2: Use rle and rep inside each group to identify consecutive points
+      stopped_sog = {
+        rle_vals <- rle(below_threshold)
+        stopped_runs <- rep(rle_vals$lengths > 2 & rle_vals$values, rle_vals$lengths)
+        as.integer(stopped_runs)  # Convert logical to integer (1 for stopped, 0 for not)
+      }, 
+      # Create a flag for when either navigational_status or stopped_sog changes
+      status_change = ifelse(stopped_sog != lag(stopped_sog, default = first(stopped_sog)), 
+                             TRUE, FALSE)
+    ) %>%
+    ungroup() %>%  # Ungroup after applying the logic
+    select(-below_threshold)  %>% # Remove the temporary variable if not needed 
+    arrange(scramblemmsi, Time)
   
   # Calculate whether points are occurring during daytime or at night 
   if(daynight==TRUE){
@@ -290,34 +292,79 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
       st_coordinates()
     
     solarpos <- maptools::solarpos(temp, 
-                                   dateTime=AISspeed1$Time, 
+                                   dateTime=test$Time, 
                                    POSIXct.out=TRUE)
 
     test$solarpos <- solarpos[,2]
     test$timeofday <- as.factor(ifelse(test$solarpos > -6, "day","night"))
-
-    test$status_change[which(test$timeofday != dplyr::lag(test$timeofday))] <- TRUE
+    
+    test <- test %>% 
+      group_by(scramblemmsi) %>% 
+      mutate(status_change = ifelse(timeofday != lag(timeofday, default = first(timeofday)), 
+                                             TRUE, status_change)) %>% 
+      ungroup()
+    
+    # test$status_change[which(test$timeofday != dplyr::lag(test$timeofday))] <- TRUE
     
     print(paste("Sunrise",yr, mnth))
   }
   
-  
-  test <- test %>% group_by(scramblemmsi) %>% 
-    # 
-    mutate(newseg = cumsum(lag(status_change, default = FALSE)), 
-           # newseg = ifelse(newseg == 0, 1, newseg), 
+  test <- test %>% 
+    group_by(scramblemmsi) %>% 
+    mutate(newline = cumsum(cut_line), 
+           newseg = cumsum(status_change) + 1) %>% 
+           # newseg = ifelse(is.na(newseg), lag(newseg), newseg)) %>% 
+    # filter(!is.na(newseg)) %>% 
            # Create a group ID for each set of consecutive points based on scramblemmsi and status_change
-           newsegid = stringi::stri_c(AIS_ID,  newseg, sep = ""))
+    mutate(newsegid = stringi::stri_c(AIS_ID, newline, newseg, sep = "-"))
+  
+  # Create duplicate points at end of each segment (duplicate to the beginning of the next segment) 
+  # So that track lines are continuous even if segments are separated. 
+  test <- test %>%
+    arrange(scramblemmsi, Time) %>% 
+    group_by(scramblemmsi) %>%
+    do({
+      segment <- .
+      expanded_segment <- segment
+      
+      if(length(unique(segment$newseg)) > 1){
+        
+        for (i in 2:length(unique(segment$newseg))) {
+          
+          seg <- segment[segment$newseg == i,]
+          
+          # Only connect segments if the reason for cutting them wasn't time or distance gaps
+          if(seg$cut_line[1] == FALSE){
+            
+            new_segment_id <- i - 1
+  
+            # Duplicate the last point and modify its newseg
+            first_point <- seg[1,]
+            first_point$status_change <- FALSE
+            first_point$newseg <- new_segment_id
+            
+            # Create a new row with the duplicated point and new segment_id
+            expanded_segment <- rbind(expanded_segment, first_point)
+          }
+        }
+      }
+      expanded_segment
+    }) %>%
+    ungroup() %>% 
+    # update newsegid for new points joining onto the lines 
+    mutate(newsegid = stringi::stri_c(AIS_ID, newline, newseg, sep = "-")) %>% 
+    arrange(scramblemmsi, Time, newseg)
+  
   
   # Remove segments with only one point (can't be made into lines)
-  shortids <- test %>% 
-    group_by(newsegid) %>% 
-    summarize(n=n()) %>% 
+  shortids <- test %>%
+    group_by(newsegid) %>%
+    summarize(n=n()) %>%
     dplyr::filter(n < 2)
-  
+
   AISspeed <- test[!(test$newsegid %in% shortids$newsegid),]
-  # rm(AISspeed1)
-  
+  rm(AISspeed1)
+
   metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
   metadata$short_mmsi <- length(unique(AISspeed$scramblemmsi))
   metadata$short_pts <- length(AISspeed$scramblemmsi)
@@ -356,7 +403,6 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
                   Draught = first(Draught, na_rm = T), 
                   Destination = first(Destination, na_rm = T),
                   stopped_sog = first(stopped_sog, na_rm = T), 
-                  stopped_navstat = first(stopped_navstat, na_rm = T),
                   npoints=n(), 
                   do_union=FALSE, 
                   geometry = st_combine(geometry)) %>% 
