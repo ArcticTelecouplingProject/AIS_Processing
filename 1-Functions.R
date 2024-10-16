@@ -260,27 +260,47 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
   # Indicate new segment for first point in each line  
   AISspeed1$cut_line[is.na(AISspeed1$cut_line)] <- TRUE
   
-  # Calculate 10-point rolling average for the speed column
-  test <- AISspeed1 %>% 
-    arrange(by=Time) %>%
+  # Identify vessed that are "stopped" (traveling <2 knots) for > 1 hour
+  test <- AISspeed1 %>%
+    arrange(Time) %>%
     group_by(scramblemmsi) %>%
     mutate(
       # Step 1: Create a logical vector for each ship if SOG is below 2 knots
       below_threshold = SOG < 2,
       
-      # Step 2: Use rle and rep inside each group to identify consecutive points
-      stopped_sog = {
-        rle_vals <- rle(below_threshold)
-        stopped_runs <- rep(rle_vals$lengths > 2 & rle_vals$values, rle_vals$lengths)
-        as.integer(stopped_runs)  # Convert logical to integer (1 for stopped, 0 for not)
-      }, 
-      # Create a flag for when either navigational_status or stopped_sog changes
-      status_change = ifelse(stopped_sog != lag(stopped_sog, default = first(stopped_sog)), 
-                             TRUE, FALSE)
+      # Step 2: Calculate the time difference between consecutive points in hours
+      time_diff = as.numeric(difftime(Time, lag(Time, default = first(Time)), units = "hours")),
+      
+      # Step 3: Set time_diff to 0 where speed is >= 2 knots
+      time_diff_below_threshold = ifelse(below_threshold, time_diff, 0),
+      
+      # Step 4: Calculate cumulative time spent below the speed threshold within each stop period
+      cum_time_below_threshold = ifelse(below_threshold, ave(time_diff_below_threshold, cumsum(!below_threshold), FUN = cumsum), 0),
+      
+      # Step 5: Mark points as "stopped" if the vessel has been below 2 knots for at least 1 hour
+      below_1hr = cum_time_below_threshold >= 1,  # Logical vector marking points after 1 hour below threshold
+      
+      # Step 6: Identify the start of the below-threshold period
+      # Create a flag for the start of below-threshold segments
+      start_below_threshold = below_threshold & lag(below_threshold, default = FALSE) == FALSE,
+      
+      # Step 7: Create a grouping identifier for each below-threshold period
+      below_threshold_group = cumsum(start_below_threshold),
+      
+      # Step 8: Update stopped_sog: set to 1 for all points in a group where any point reaches 1 hour below threshold
+      stopped_sog = ifelse(below_threshold_group %in% below_threshold_group[below_1hr], 1, 0),
+      
+      # Step 9: Reset stopped_sog to 0 when the vessel speeds up above 2 knots
+      stopped_sog = ifelse(SOG >= 2, 0, stopped_sog),
+      
+      # Step 10: Create a flag for when stopped_sog changes
+      status_change = ifelse(stopped_sog != lag(stopped_sog, default = first(stopped_sog)), TRUE, FALSE)
+      
     ) %>%
-    ungroup() %>%  # Ungroup after applying the logic
-    select(-below_threshold)  %>% # Remove the temporary variable if not needed 
+    ungroup() %>%
+    select(-below_threshold, -time_diff, -time_diff_below_threshold, -cum_time_below_threshold, -below_1hr, -start_below_threshold, -below_threshold_group) %>%
     arrange(scramblemmsi, Time)
+  
   
   # Calculate whether points are occurring during daytime or at night 
   if(daynight==TRUE){
