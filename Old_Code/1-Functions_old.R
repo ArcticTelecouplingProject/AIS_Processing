@@ -1,4 +1,4 @@
-clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, output, hexgrid=NA){
+# clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, output, hexgrid=NA){
   
   # profvis({
   # Start overall timer 
@@ -155,7 +155,7 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
   metadata$orig_pts <- length(AIScsv$MMSI)
   
   runtimes$importtime <- (proc.time() - start)[[3]]/60
-
+  
   # Remove invalid lat/long values
   AIScsvDF4 <- AIScsv %>%
     filter(!is.na(Latitude)) %>%
@@ -255,7 +255,7 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
     ungroup()
   
   AISspeed1$cut_line <- ifelse(AISspeed1$timediff > 6, TRUE,
-                             ifelse(AISspeed1$distdiff > 60, TRUE, FALSE))
+                               ifelse(AISspeed1$distdiff > 60, TRUE, FALSE))
   
   # Indicate new segment for first point in each line  
   AISspeed1$cut_line[is.na(AISspeed1$cut_line)] <- TRUE
@@ -263,6 +263,7 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
   # Identify vessed that are "stopped" (traveling <2 knots) for > 1 hour
   test <- AISspeed1 %>%
     arrange(Time) %>%
+    filter(!is.na(SOG)) %>% 
     group_by(scramblemmsi) %>%
     mutate(
       # Step 1: Create a logical vector for each ship if SOG is below 2 knots
@@ -314,14 +315,14 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
     solarpos <- maptools::solarpos(temp, 
                                    dateTime=test$Time, 
                                    POSIXct.out=TRUE)
-
+    
     test$solarpos <- solarpos[,2]
     test$timeofday <- as.factor(ifelse(test$solarpos > -6, "day","night"))
     
     test <- test %>% 
       group_by(scramblemmsi) %>% 
       mutate(status_change = ifelse(timeofday != lag(timeofday, default = first(timeofday)), 
-                                             TRUE, status_change)) %>% 
+                                    TRUE, status_change)) %>% 
       ungroup()
     
     # test$status_change[which(test$timeofday != dplyr::lag(test$timeofday))] <- TRUE
@@ -333,9 +334,9 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
     group_by(scramblemmsi) %>% 
     mutate(newline = cumsum(cut_line), 
            newseg = cumsum(status_change) + 1) %>% 
-           # newseg = ifelse(is.na(newseg), lag(newseg), newseg)) %>% 
+    # newseg = ifelse(is.na(newseg), lag(newseg), newseg)) %>% 
     # filter(!is.na(newseg)) %>% 
-           # Create a group ID for each set of consecutive points based on scramblemmsi and status_change
+    # Create a group ID for each set of consecutive points based on scramblemmsi and status_change
     mutate(newsegid = stringi::stri_c(AIS_ID, newline, newseg, sep = "-"))
   
   # Create duplicate points at end of each segment (duplicate to the beginning of the next segment) 
@@ -357,7 +358,7 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
           if(seg$cut_line[1] == FALSE){
             
             new_segment_id <- i - 1
-  
+            
             # Duplicate the last point and modify its newseg
             first_point <- seg[1,]
             first_point$status_change <- FALSE
@@ -381,10 +382,10 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
     group_by(newsegid) %>%
     summarize(n=n()) %>%
     dplyr::filter(n < 2)
-
+  
   AISspeed <- test[!(test$newsegid %in% shortids$newsegid),]
   rm(AISspeed1)
-
+  
   metadata$short_aisids <- length(unique(AISspeed$AIS_ID))
   metadata$short_mmsi <- length(unique(AISspeed$scramblemmsi))
   metadata$short_pts <- length(AISspeed$scramblemmsi)
@@ -456,7 +457,6 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
                   Draught = first(Draught, na_rm = T), 
                   Destination = first(Destination, na_rm = T),
                   stopped_sog = first(stopped_sog, na_rm = T), 
-                  stopped_navstat = first(stopped_navstat, na_rm = T),
                   npoints=n(), 
                   geometry = st_combine(geometry)) %>% 
         mutate(geometry = st_cast(geometry, "LINESTRING")) %>% 
@@ -530,7 +530,7 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
       # Save data in vector format
       if(length(AISfilteredType$newsegid) > 0){
         st_write(AISfilteredType,
-                 paste0("../Data_Processed/Vector/Tracks_DayNight", 
+                 paste0("../Data_Processed_Test/Vector/Tracks_DayNight", 
                         daynight, "_",MoName,"-",allTypes[k],".shp"),
                  append = F)
       }
@@ -542,10 +542,10 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
     runtime <- proc.time() - starttime 
     runtimes$runtime_min <- runtime[[3]]/60 
     
-    write.csv(metadata, paste0("../Data_Processed/Metadata/Metadata_DayNight", 
+    write.csv(metadata, paste0("../Data_Processed_Test/Metadata/Metadata_DayNight", 
                                daynight, "_", MoName,".csv"))
     
-    write.csv(runtimes, paste0("../Data_Processed/Metadata/Runtimes_DayNight", 
+    write.csv(runtimes, paste0("../Data_Processed_Test/Metadata/Runtimes_DayNight", 
                                daynight, "_",MoName,".csv"))
     print(runtimes)
     
@@ -607,11 +607,11 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
     metadata$ncargo_mmsis <- nships$n[nships$AIS_Type == "Cargo"]
     metadata$nother_mmsis <- nships$n[nships$AIS_Type == "Other"]
     metadata$ntotal_mmsis <- sum(nships$n)
-
+    
     
     runtimes$jointime <- (proc.time() - start)[[3]]/60
     
-
+    
     
     # Thrown out for missing/incorrect lat/lon/MMSI, duplicate points, speed > 100 km/hr, outisde hex grid
     metadata$pctmissingwidth <- round(sum(is.na(AISjoined$Dim_Width))/length(AISjoined$Dim_Width)*100, 2)
@@ -666,23 +666,23 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
                     D_nShp=length(unique(scramblemmsi)),
                     D_OpD=length(unique(AIS_ID)))
         
-
+        
         joinOut <- left_join(dayHrs, nightHrs, by=c("hexID"))
         joinOut <- joinOut %>% 
           mutate_at(c(1:ncol(joinOut)), ~replace_na(.,0))
       }
-        
-        # Hrs will not be the sum of day and night hrs because it includes 
-        # the transition intervals (e.g., between day and night)
-        joinOutNew <- AISfilteredType %>%
-          st_drop_geometry() %>% 
-          group_by(hexID) %>%
-          summarize(Hrs=round(sum(timediff, na.rm=T), 2),
-                    nShp=length(unique(scramblemmsi)),
-                    OpD=length(unique(AIS_ID)))
-        if(daynight == T){
-          joinOutNew <- left_join(joinOutNew, joinOut)
-        }
+      
+      # Hrs will not be the sum of day and night hrs because it includes 
+      # the transition intervals (e.g., between day and night)
+      joinOutNew <- AISfilteredType %>%
+        st_drop_geometry() %>% 
+        group_by(hexID) %>%
+        summarize(Hrs=round(sum(timediff, na.rm=T), 2),
+                  nShp=length(unique(scramblemmsi)),
+                  OpD=length(unique(AIS_ID)))
+      if(daynight == T){
+        joinOutNew <- left_join(joinOutNew, joinOut)
+      }
       
       colnames(joinOutNew)[2:ncol(joinOutNew)] <- paste0(colnames(joinOutNew)[2:ncol(joinOutNew)],"_",substring(allTypes[k],1,2))
       
@@ -750,9 +750,9 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
     # hexpts <- st_as_sf(AISjoined, coords = c("x", "y"), crs = 3338)
     
     # Save data in vector format
-    write_sf(hexgrid, paste0("../Data_Processed/Hex/Hex_",MoName,"_DayNight",daynight,".shp"))
-    # write_sf(AISjoined, paste0("../Data_Processed_TEST/Hex/SpeedPts_",MoName,"_",ndays,".shp"))
-    # write_sf(hexpts, paste0("../Data_Processed_TEST/Hex/SpeedPts_",MoName,".shp"))
+    write_sf(hexgrid, paste0("../Data_Processed_Test/Hex/Hex_",MoName,"_DayNight",daynight,"-OLD.shp"))
+    # write_sf(AISjoined, paste0("../Data_Processed_Test_TEST/Hex/SpeedPts_",MoName,"_",ndays,".shp"))
+    # write_sf(hexpts, paste0("../Data_Processed_Test_TEST/Hex/SpeedPts_",MoName,".shp"))
     
     
     # Save processing info to text file 
@@ -761,14 +761,13 @@ clean_and_transform <- function(csvList, flags, scrambleids, dest, daynight, out
     runtimes$runtime <- (proc.time() - starttime)[[3]]
     runtimes$runtime_min <- runtimes$runtime/60 
     
-    write.csv(metadata, paste0("../Data_Processed/Hex/HexMetadata_",MoName,"_DayNight",daynight,".csv"))
+    write.csv(metadata, paste0("../Data_Processed_Test/Hex/HexMetadata_",MoName,"_DayNight",daynight,"-OLD.csv"))
     
     
-    write.csv(runtimes, paste0("../Data_Processed/Hex/HexRuntimes_",MoName,"_DayNight",daynight,".csv"))
-    # write.csv(runtimes, paste0("../Data_Processed_TEST/Hex/Runtimes_SpeedHex_",MoName,"_",ndays,".csv"))
+    write.csv(runtimes, paste0("../Data_Processed_Test/Hex/HexRuntimes_",MoName,"_DayNight",daynight,"-OLD.csv"))
+    # write.csv(runtimes, paste0("../Data_Processed_Test_TEST/Hex/Runtimes_SpeedHex_",MoName,"_",ndays,".csv"))
     # print(runtimes)
     # return(runtimes)
   }
-  }
-
+# }
 
