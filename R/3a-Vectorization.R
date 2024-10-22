@@ -11,7 +11,7 @@
 #' df <- data.frame(x = c(1, 2), y = c(3, 4), Time = c("2023-01-01", "2023-01-02"), newsegid = c(1, 1))
 #' dest <- data.frame(Destntn = "Some Port")
 #' segments <- vectorize_segments(df, dest)
-vectorize_segments <- function(df, dest){
+vectorize_segments <- function(df, dest, daynight){
   
   # Common base process
   AISsf1 <- df %>%
@@ -23,9 +23,9 @@ vectorize_segments <- function(df, dest){
     summarize(scramblemmsi = first(scramblemmsi),
               Time_Start = as.character(first(Time)),
               Time_End = as.character(last(Time)),
-              Time_Of_Day = case_when(
-                daynight ~ first(timeofday, na_rm = TRUE),
-                TRUE ~ NA_character_
+              Time_Of_Day = ifelse(daynight, 
+                                   case_when(daynight ~ first(timeofday, na_rm = TRUE),
+                TRUE ~ NA_character_), NA
               ),
               AIS_ID = first(AIS_ID),
               SOG_Median = median(SOG, na.rm = TRUE),
@@ -47,12 +47,6 @@ vectorize_segments <- function(df, dest){
     st_make_valid() %>%
     filter(npoints > 1)
   
-  # Apply st_make_valid only if daynight == TRUE and filter npoints > 1
-  if (daynight) {
-    metadata$daynightshort_aisids <- length(unique(AISsf1$AIS_ID))
-    metadata$daynightshort_mmsi <- length(unique(AISsf1$scramblemmsi))
-  }
-  
   if(!daynight){
     AISsf1 <- AISsf1 %>% dplyr::select(-Time_Of_Day)
   }
@@ -66,14 +60,16 @@ vectorize_segments <- function(df, dest){
     mutate(Length_Km = as.numeric(st_length(.)/1000)) %>% 
     
     # Remove any non-linestring types if still remaining after st_make_valid
-    st_collection_extract("LINESTRING")
+    st_collection_extract("LINESTRING", warn = FALSE)
+  
+  return(AISsf)
 }
 
 #' Save Ship Segments
 #'
 #' This function saves the spatial ship segments as shapefiles for each unique ship type.
 #'
-#' @param AISsf A spatial data frame (sf) containing ship segment data.
+#' @param df A spatial data frame (sf) containing ship segment data.
 #' @param MoName A string representing the month name.
 #' @param daynight A logical value indicating if the segments represent day or night.
 #'
@@ -81,20 +77,20 @@ vectorize_segments <- function(df, dest){
 #' 
 #' @examples
 #' save_segments(AISsf, "January", TRUE)
-save_segments <- function(AISsf, MoName, daynight){
+save_segments <- function(df, MoName, daynight){
   
   # Loop through each ship type and save shp file 
-  allTypes <- unique(AISsf$AIS_Type)
+  allTypes <- unique(df$AIS_Type)
   
   for (k in 1:length(allTypes)){
     
-    AISfilteredType <- AISjoined %>%
+    AISfilteredType <- df %>%
       filter(AIS_Type==allTypes[k])
     
     # Save data in vector format
     if(length(AISfilteredType$newsegid) > 0){
       st_write(AISfilteredType,
-               paste0("../Data_Processed/Vector/Tracks_DayNight", 
+               paste0("../Data_Processed_V3_Test/Vector/Tracks_DayNight", 
                       daynight, "_",MoName,"-",allTypes[k],".shp"),
                append = F)
     }

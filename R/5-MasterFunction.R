@@ -94,7 +94,6 @@ process_ais_data <- function(csvList,
     
     # Identify ship types
     id_ship_type() %>%
-    { metadata <<- shiptype_metadata(metadata, .); . } %>%
     
     # Remove 0s from ship dimensions 
     fix_ship_dimensions(.) %>%
@@ -113,19 +112,25 @@ process_ais_data <- function(csvList,
     expand_segments() %>%
     
     # Remove short segments with less than 2 points
-    remove_short_segments() %>% 
+    remove_short_segments() 
     
     # Measure import time
-    { runtimes$segment <<- (proc.time() - start)[[3]] / 60; . }
+    runtimes$segment <- (proc.time() - start)[[3]] / 60
   
-    {print(paste0(MoName, " segmentation complete.")); .} %>% 
+    print(paste0(MoName, " segmentation complete."))
+    
+    print(runtimes)
+    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Vector_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
+    
+    print(metadata) 
+    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Vector_Metadata_", MoName, "_DayNight", daynight, ".csv"))
   
   #### VECTORIZATION ---------------------------------------------------------
   if (output %in% c("vector", "raster")) {
     
     # Transform to lines
     vec_data <- clean_data %>%
-      vectorize_segments(dest = dest)
+      vectorize_segments(dest = dest, daynight = daynight)
 
     # Export as shapefiles
     if (output == "vector") {
@@ -134,6 +139,9 @@ process_ais_data <- function(csvList,
     
     # Generate metadata for the final number of ships after cleaning
     metadata <- update_metadata(metadata, "cleaned", vec_data, column = "scramblemmsi")
+    
+    # Final stats for ship type numbers 
+    metadata <- shiptype_metadata(metadata, vec_data)
       
     # Calculate pct data missing for key columns
     metadata <- missing_data_metadata(metadata, vec_data)
@@ -148,7 +156,7 @@ process_ais_data <- function(csvList,
   if (output == "hex") {
     
     # Main Script
-    hex_data <- clean_data %>% calculate_hex_grid_summary(., hexgrid, daynight, MoName)
+    hex_data <- clean_data %>% calculate_hex_grid_summary(., hexgrid, daynight)
 
     # Save data in vector format
     write_sf(hex_data, paste0("../Data_Processed_V3_Test/Hex/Hex_", MoName, "_DayNight", daynight, ".shp"))
@@ -157,24 +165,16 @@ process_ais_data <- function(csvList,
     runtimes$hex <- (proc.time() - start)[[3]] / 60
     
     print(paste0(MoName, " hex generation complete."))
+    
+    print(runtimes)
+    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Hex_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
+    
+    print(metadata) 
+    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Hex_Metadata_", MoName, "_DayNight", daynight, ".csv"))
   }
 
   # #### RASTER --------------------------------------------------------------
   # if (output == "raster") {
   #   # ADD RASTER CODE HERE.... 
   # }
-  
-  
-  print(runtimes)
-  write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Runtimes_", MoName, "_DayNight", daynight, ".csv"))
-  
-  print(metadata) 
-  write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Metadata_", MoName, "_DayNight", daynight, ".csv"))
 }
-
-# Example usage
-newspeed <- process_ais_data(csvList, year, flags, dest, 
-                             daynight = TRUE, 
-                             output = "vector", 
-                             hexgrid = NULL, 
-                             scrambleids = scrambleids)

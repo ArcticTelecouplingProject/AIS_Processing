@@ -59,7 +59,7 @@ missing_data_metadata <- function(metadata, df){
   
   metadata$pctmissingwidth <- round(length(nowidth)/length(df$Dim_Width)*100, 2)
   metadata$pctmissinglength <- round(length(nolength)/length(df$Dim_Length)*100, 2)
-  metadata$pctmissingSOG <-  round(sum(is.na(df$SOG))/length(df$Dim_Length)*100, 2)
+  metadata$pctmissingSOG <-  round(sum(is.na(df$SOG_Mean))/length(df$Dim_Length)*100, 2)
   
   return(metadata)
 }
