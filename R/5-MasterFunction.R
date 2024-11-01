@@ -118,12 +118,6 @@ process_ais_data <- function(csvList,
     runtimes$segment <- (proc.time() - start)[[3]] / 60
   
     print(paste0(MoName, " segmentation complete."))
-    
-    print(runtimes)
-    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Vector_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
-    
-    print(metadata) 
-    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Vector_Metadata_", MoName, "_DayNight", daynight, ".csv"))
   
   #### VECTORIZATION ---------------------------------------------------------
   if (output %in% c("vector", "raster")) {
@@ -150,6 +144,12 @@ process_ais_data <- function(csvList,
     runtimes$vector <- (proc.time() - start)[[3]] / 60
     
     print(paste0(MoName, " vectorization complete."))
+    
+    print(runtimes)
+    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Vector_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
+    
+    print(metadata) 
+    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Vector_Metadata_", MoName, "_DayNight", daynight, ".csv"))
   }
 
   #### HEX -------------------------------------------------------------------
