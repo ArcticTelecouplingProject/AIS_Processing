@@ -79,7 +79,7 @@ calculate_speed <- function(df) {
   if(!("x" %in% colnames(df) & "y" %in% colnames(df))){
     df[, c("x", "y")] <- st_coordinates(df)
   }
-  df %>% 
+  dfnew <- df %>% 
     st_drop_geometry() %>%
     group_by(AIS_ID) %>%
     arrange(AIS_ID, Time) %>% 
@@ -88,15 +88,16 @@ calculate_speed <- function(df) {
     filter(timediff > 0) %>% 
     filter(distdiff > 0) %>% 
     mutate(speed = distdiff / timediff)
+  
+  return(dfnew)
   }
-
 
 #' Identify stopped vessels
 #'
 #' @param df Data frame with vessel information, including SOG and Time
 #'
 #' @return Data frame with information on vessels that are "stopped" (traveling <3 knots for >1 hour)
-identify_stopped_vessels <- function(df, speed_threshold = 3, time_threshold = 1) {
+identify_stopped_vessels <- function(df, speed_threshold, time_threshold) {
   df %>%
     arrange(Time) %>%
     filter(!is.na(SOG)) %>% 
@@ -235,35 +236,28 @@ id_ship_type <- function(df){
                  rep("Cargo", 10), rep("Tanker", 10), "Unknown")
   ) 
   
-  df <- df %>% mutate(Ship_Type = as.numeric(Ship_Type)) %>% left_join(types, by = "Ship_Type") 
+  # Determine ship type 
+  scrmb_types <- df %>%
+    filter(!is.na(Ship_Type)) %>%
+    group_by(scramblemmsi, Ship_Type) %>%
+    summarize(count = n(), .groups = "drop") %>%
+    group_by(scramblemmsi) %>%
+    filter(count == max(count)) %>%
+    summarize(
+      Ship_Type = if_else(n() == 1, Ship_Type, NA_character_),
+      .groups = "drop"
+    )
   
-  df$AIS_Type[df$Ship_Type <100 & is.na(df$AIS_Type)] <- "Other"
-  df$AIS_Type[is.na(df$AIS_Type)] <- "Unknown" 
-  df$AIS_Type[df$AIS_Type == 0] <- "Unknown"  
-  return(df)
+  dfnew <- df %>% 
+    select(-Ship_Type) %>% 
+    left_join(scrmb_types, by = "scramblemmsi") %>% 
+    mutate(Ship_Type = as.numeric(Ship_Type)) %>% 
+    left_join(types, by = "Ship_Type") 
+  
+  dfnew$AIS_Type[dfnew$Ship_Type <100 & is.na(dfnew$AIS_Type)] <- "Other"
+  dfnew$AIS_Type[is.na(dfnew$AIS_Type)] <- "Unknown" 
+  dfnew$AIS_Type[dfnew$AIS_Type == 0] <- "Unknown"  
+  
+  return(dfnew)
 }
 
-
-#' Fix Ship Dimensions
-#'
-#' This function modifies ship dimension columns by replacing zero values with NA.
-#'
-#' @param df A data frame containing ship data, with columns `Dim_Length` and `Dim_Width`.
-#'
-#' @return A data frame with modified `Dim_Length` and `Dim_Width` columns where zeros are replaced by NA.
-#' 
-#' @examples
-#' df <- data.frame(Dim_Length = c(50, 0, 100), Dim_Width = c(20, 0, 30))
-#' fixed_df <- fix_ship_dimensions(df)
-fix_ship_dimensions <- function(df){
-  
-  # Calculate number of ships with 0 values in dimensions and convert to NA
-  zerolength <- which(df$Dim_Length == 0)
-  zerowidth <- which(df$Dim_Width == 0)
-  
-  # Remove zero value rows for consideration of respective measurement
-  df$Dim_Length[zerolength] <- NA
-  df$Dim_Width[zerowidth] <- NA
-  
-  return(df)
-}

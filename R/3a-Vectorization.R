@@ -17,6 +17,16 @@ vectorize_segments <- function(df, dest, daynight){
   AISsf1 <- df %>%
     st_as_sf(coords = c("x", "y"), crs = 3338) %>%
     arrange(Time) %>%
+    mutate(
+      Dim_Length = as.numeric(Dim_Length),
+      Dim_Width = as.numeric(Dim_Width),
+      Draught = as.numeric(Draught)
+    ) %>%
+    mutate(
+      Dim_Length = if_else(Dim_Length == 0, NA_real_, Dim_Length),
+      Dim_Width = if_else(Dim_Width == 0, NA_real_, Dim_Width),
+      Draught = if_else(Draught == 0, NA_real_, Draught)
+    ) %>%
     # Create 1 line per AIS ID
     group_by(newsegid) %>%
     # Summarize with common columns
@@ -33,9 +43,9 @@ vectorize_segments <- function(df, dest, daynight){
               Ship_Type = first(Ship_Type, na_rm = TRUE),
               AIS_Type = first(AIS_Type, na_rm = TRUE),
               Country = first(Country, na_rm = TRUE),
-              Dim_Length = first(Dim_Length, na_rm = TRUE),
-              Dim_Width = first(Dim_Width, na_rm = TRUE),
-              Draught = first(Draught, na_rm = TRUE),
+              Dim_Length = if (all(is.na(Dim_Length))) NA_real_ else if (length(unique(na.omit(Dim_Length))) == 1) unique(na.omit(Dim_Length)) else NA_real_,
+              Dim_Width = if (all(is.na(Dim_Width))) NA_real_ else if (length(unique(na.omit(Dim_Width))) == 1) unique(na.omit(Dim_Width)) else NA_real_,
+              Draught = if (all(is.na(Draught))) NA_real_ else if (length(unique(na.omit(Draught))) == 1) unique(na.omit(Draught)) else NA_real_,
               Destination = first(Destination, na_rm = TRUE),
               stopped_sog = first(stopped_sog, na_rm = TRUE),
               npoints = n(),

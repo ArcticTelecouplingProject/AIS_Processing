@@ -21,10 +21,11 @@ process_ais_data <- function(csvList,
                              hexgrid = NULL, 
                              daynight = FALSE, 
                              output = "vector", 
-                             speed_threshold = 3, 
+                             speed_threshold = 2, 
                              time_threshold = 1,
                              timediff_threshold = 6, 
                              distdiff_threshold = 60) {
+
   # Start segment timer to measure processing time
   start <- proc.time()
   
@@ -73,12 +74,13 @@ process_ais_data <- function(csvList,
     # Calculate speed and remove duplicate or invalid points
     calculate_speed(.) %>% 
     { metadata <<- update_metadata(metadata, "redund", ., column = "scramblemmsi"); . } %>%
-    
+
     # Implement speed filter and remove invalid speeds
     filter(speed < 100) %>% 
     filter(!is.na(speed)) %>%
     { metadata <<- update_metadata(metadata, "speed", ., column = "scramblemmsi"); . } %>%
-    
+
+    # DIFFERENCE IS OCCURRING HERE
     # Recalculate speed now that erroneous speedy points have been removed
     calculate_speed() %>%
     
@@ -94,9 +96,6 @@ process_ais_data <- function(csvList,
     
     # Identify ship types
     id_ship_type() %>%
-    
-    # Remove 0s from ship dimensions 
-    fix_ship_dimensions(.) %>%
     
     # Measure import time
     { runtimes$cleantime <<- (proc.time() - start)[[3]] / 60; . } %>%
@@ -149,7 +148,7 @@ process_ais_data <- function(csvList,
     write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Vector_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
     
     print(metadata) 
-    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Vector_Metadata_", MoName, "_DayNight", daynight, ".csv"))
+    write.csv(metadata, paste0("../Data_Processed_V3_Test/Metadata/Vector_Metadata_", MoName, "_DayNight", daynight, ".csv"))
   }
 
   #### HEX -------------------------------------------------------------------
