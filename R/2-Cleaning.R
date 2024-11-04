@@ -85,8 +85,8 @@ calculate_speed <- function(df) {
     arrange(AIS_ID, Time) %>% 
     mutate(timediff = as.numeric(difftime(Time, lag(Time), units = "hours")),
            distdiff = sqrt((y - lag(y))^2 + (x - lag(x))^2) / 1000) %>% 
-    filter(timediff > 0) %>% 
-    filter(distdiff > 0) %>% 
+    filter(timediff > 0) %>%
+    filter(distdiff > 0) %>%
     mutate(speed = distdiff / timediff)
   
   return(dfnew)
@@ -170,7 +170,7 @@ create_segments <- function(df) {
     group_by(scramblemmsi) %>% 
     mutate(newline = cumsum(cut_line), 
            newseg = cumsum(status_change) + 1) %>% 
-    mutate(newsegid = stringi::stri_c(AIS_ID, newline, newseg, sep = "-"))
+    mutate(newsegid = stringi::stri_c(scramblemmsi, newline, newseg, sep = "-"))
 }
 
 #' Expand segments to connect track lines
@@ -179,6 +179,7 @@ create_segments <- function(df) {
 #'
 #' @return Data frame with expanded segments for continuous track lines
 expand_segments <- function(df) {
+  # temp <- t %>%
   df %>%
     arrange(scramblemmsi, Time) %>%
     group_by(scramblemmsi) %>%
@@ -190,19 +191,31 @@ expand_segments <- function(df) {
         for (i in 2:length(unique(segment$newseg))) {
           seg <- segment[segment$newseg == i, ]
           
+          # If it's not a new line bc of time/distance thresholds 
           if (seg$cut_line[1] == FALSE) {
-            new_segment_id <- i - 1
-            first_point <- seg[1, ]
-            first_point$status_change <- FALSE
-            first_point$newseg <- new_segment_id
-            expanded_segment <- rbind(expanded_segment, first_point)
+            # If the ship is starting from a stop 
+            if(seg$stopped_sog[1] ==  0 & last(segment$stopped_sog[segment$newseg == (i-1)]) == 1){  
+              # Then attach the last point of being stopped to the first point of the moving segment
+              last_point <- last(segment[segment$newseg == (i-1),])
+              last_point$status_change <- FALSE
+              last_point$newseg <- i
+              last_point[1, setdiff(names(last_point), c("scramblemmsi", "Time", "SOG", "status_change", "cut_line", "newseg", "newline", "x", "y", "timeofday"))] <- NA
+              expanded_segment <- rbind(expanded_segment, last_point)
+              }else{
+                # Otherwise, attach the first point of the next segment as the last point of the current segment
+                new_segment_id <- (i - 1)
+                first_point <- seg[1, ]
+                first_point$status_change <- FALSE
+                first_point$newseg <- new_segment_id
+                expanded_segment <- rbind(expanded_segment, first_point) 
+              }
           }
         }
       }
       expanded_segment
     }) %>%
     ungroup() %>%
-    mutate(newsegid = stringi::stri_c(AIS_ID, newline, newseg, sep = "-")) %>%
+    mutate(newsegid = stringi::stri_c(scramblemmsi, newline, newseg, sep = "-")) %>%
     arrange(scramblemmsi, Time, newseg)
 }
 
