@@ -25,6 +25,13 @@ process_ais_data <- function(csvList,
                              time_threshold = 1,
                              timediff_threshold = 6, 
                              distdiff_threshold = 60) {
+  
+  # output = "vector"
+  # speed_threshold = 2
+  # time_threshold = 1
+  # timediff_threshold = 6
+  # distdiff_threshold = 60
+  # daynight <- FALSE
 
   # Start segment timer to measure processing time
   start <- proc.time()
@@ -106,10 +113,10 @@ process_ais_data <- function(csvList,
     
     # Create segments for AIS data
     create_segments() %>%
-    
+
     # Expand segments to connect track lines
     expand_segments() %>%
-    
+
     # Remove short segments with less than 2 points
     remove_short_segments() 
     
@@ -123,7 +130,8 @@ process_ais_data <- function(csvList,
     
     # Transform to lines
     vec_data <- clean_data %>%
-      vectorize_segments(dest = dest, daynight = daynight)
+      vectorize_segments(dest = dest, daynight = daynight) %>% 
+      dplyr::select(-Dim_Width, -Dim_Length, -Draught) 
 
     # Export as shapefiles
     if (output == "vector") {
