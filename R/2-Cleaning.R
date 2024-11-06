@@ -81,13 +81,14 @@ calculate_speed <- function(df) {
   }
   dfnew <- df %>% 
     st_drop_geometry() %>%
-    group_by(AIS_ID) %>%
-    arrange(AIS_ID, Time) %>% 
+    group_by(scramblemmsi) %>%
+    arrange(scramblemmsi, Time) %>% 
     mutate(timediff = as.numeric(difftime(Time, lag(Time), units = "hours")),
            distdiff = sqrt((y - lag(y))^2 + (x - lag(x))^2) / 1000) %>% 
     filter(timediff > 0) %>%
     filter(distdiff > 0) %>%
-    mutate(speed = distdiff / timediff)
+    mutate(speed = distdiff / timediff) %>% 
+    ungroup()
   
   return(dfnew)
   }
@@ -199,7 +200,8 @@ expand_segments <- function(df) {
               last_point <- last(segment[segment$newseg == (i-1),])
               last_point$status_change <- FALSE
               last_point$newseg <- i
-              last_point[1, setdiff(names(last_point), c("scramblemmsi", "Time", "SOG", "status_change", "cut_line", "newseg", "newline", "x", "y", "timeofday"))] <- NA
+              last_point[1, setdiff(names(last_point), 
+                                    c("scramblemmsi", "Time", "AIS_Type", "Ship_Type", "SOG", "status_change", "cut_line", "newseg", "newline", "x", "y", "timeofday"))] <- NA
               expanded_segment <- rbind(expanded_segment, last_point)
               }else{
                 # Otherwise, attach the first point of the next segment as the last point of the current segment
@@ -257,7 +259,7 @@ id_ship_type <- function(df){
     group_by(scramblemmsi) %>%
     filter(count == max(count)) %>%
     summarize(
-      Ship_Type = if_else(n() == 1, Ship_Type, NA_character_),
+      Ship_Type = if (n() == 1) Ship_Type else NA_character_,
       .groups = "drop"
     )
   
