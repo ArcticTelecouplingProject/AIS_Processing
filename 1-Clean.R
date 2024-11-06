@@ -6,12 +6,13 @@ library(stringi)
 library(purrr)
 library(foreach)
 library(doParallel)
+library(zoo)
 
 # Start timer
 start <- proc.time()
 
 # Import year from sb file 
-# year <- 2021
+# year <- 2015
 year <- commandArgs(trailingOnly = TRUE)
 
 # Load in files 
@@ -54,8 +55,6 @@ if(year %in% 2015:2020){
 
 # Create a list of lists of all csv file names grouped by month
 csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
-# csvsByMonth <- list(jun, jul, aug)
-# csvsByMonth <- list(jul)
 
 flags <- read.csv("../Data_Raw/FlagCodes.csv")
 
@@ -66,8 +65,27 @@ dest <- read.csv("../Data_Raw/Destination_Recoding.csv")
 
 hexgrid <- st_read("../Data_Raw/BlankHexes.shp")
 
+
 # Load functions
-source("1-Functions.R")
+# Get a list of all R script files in the R folder 
+r_files <- list.files(path = "./R", pattern = "\\.R$", full.names = TRUE)
+# Source each file to load the functions into memory
+lapply(r_files[2:length(r_files)], source)
+
+
+######################## TESTING ########################  
+# csvsByMonth <- list(jul[1:2])
+# csvList <- csvsByMonth[[1]]
+# output <- "vector"
+# daynight <- TRUE
+
+# Example usage
+# process_ais_data(csvList, year, flags, dest,
+#                              daynight = TRUE,
+#                              output = "vector",
+#                              hexgrid = hexgrid,
+#                              scrambleids = scrambleids)
+#########################################################
 
 ## MSU HPCC: https://wiki.hpcc.msu.edu/display/ITH/R+workshop+tutorial#Rworkshoptutorial-Submittingparalleljobstotheclusterusing{doParallel}:singlenode,multiplecores
 # Request a single node (this uses the "multicore" functionality)
@@ -82,13 +100,14 @@ res=list()
 # I'm using tidyverse since it combines dplyr and tidyr into one library (I think)
 res=foreach(i=1:length(csvsByMonth),.packages=c("tidyverse", "sf", "doParallel", "stringi"),
             .errorhandling='pass',.verbose=T,.multicombine=TRUE) %dopar% 
-  clean_and_transform(csvList=csvsByMonth[[i]], 
-                      flags=flags, 
-                      scrambleids=scrambleids,
-                      dest=dest, 
-                      daynight=TRUE, 
-                      output = "hex",
-                      hexgrid = hexgrid)
+            process_ais_data(csvList=csvsByMonth[[i]], 
+                             year = year, 
+                             flags = flags, 
+                             dest = dest,
+                             daynight = FALSE,
+                             output = "vector",
+                             hexgrid = hexgrid,
+                             scrambleids = scrambleids)
 
 # Elapsed time and running information
 tottime <- proc.time() - start
