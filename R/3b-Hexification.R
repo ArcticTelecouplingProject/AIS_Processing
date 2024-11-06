@@ -110,10 +110,10 @@ calculate_aggregate_stats <- function(ais_data, include_daynight) {
 #' This function calculates summary statistics for each ship type and aggregates them into the provided hex grid.
 #' 
 #' @param ais_data Data frame containing AIS information.
-#' @param hex_grid Data frame representing the hex grid.
+#' @param hexgrid Data frame representing the hex grid.
 #' @param include_daynight Logical indicating whether to include day/night calculations.
 #' @return A data frame with the hex grid including summary statistics.
-calculate_hex_grid_summary <- function(ais_data, hex_grid, include_daynight) {
+calculate_hex_grid_summary <- function(ais_data, hexgrid, include_daynight) {
 
   ais_sf <- ais_data %>%
     st_as_sf(coords=c("x","y"),crs=3338) %>% 
@@ -123,11 +123,11 @@ calculate_hex_grid_summary <- function(ais_data, hex_grid, include_daynight) {
   
   for (k in 1:length(ship_types)) {
     summary_stats <- calculate_summary_stats(ais_sf, ship_types[k], include_daynight)
-    hex_grid <- left_join(hex_grid, summary_stats, by = "hexID")
+    hex_grid <- left_join(hexgrid, summary_stats, by = "hexID")
   }
   
   aggregate_stats <- calculate_aggregate_stats(ais_sf, include_daynight)
-  hex_grid <- left_join(hex_grid, aggregate_stats, by = "hexID")
+  hex_grid <- left_join(hexgrid, aggregate_stats, by = "hexID")
   
   hex_grid$year <- year(ais_sf$Time[1])
   hex_grid$month <- month(ais_sf$Time[1])
