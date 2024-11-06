@@ -37,16 +37,16 @@ vectorize_segments <- function(df, dest, daynight){
                                    case_when(daynight ~ first(timeofday, na_rm = TRUE),
                 TRUE ~ NA_character_), NA
               ),
-              AIS_ID = first(AIS_ID),
+              AIS_ID = first(AIS_ID, na_rm=TRUE),
               SOG_Median = median(SOG, na.rm = TRUE),
               SOG_Mean = mean(SOG, na.rm = TRUE),
-              Ship_Type = first(Ship_Type, na_rm = TRUE),
-              AIS_Type = first(AIS_Type, na_rm = TRUE),
-              Country = first(Country, na_rm = TRUE),
+              Ship_Type = if (all(is.na(Ship_Type))) NA else if (length(unique(na.omit(Ship_Type))) == 1) unique(na.omit(Ship_Type)) else NA,
+              AIS_Type = if (all(is.na(AIS_Type))) NA else if (length(unique(na.omit(AIS_Type))) == 1) unique(na.omit(AIS_Type)) else NA,
+              Country = if (all(is.na(Country))) NA else if (length(unique(na.omit(Country))) == 1) unique(na.omit(Country)) else NA,
               Dim_Length = if (all(is.na(Dim_Length))) NA_real_ else if (length(unique(na.omit(Dim_Length))) == 1) unique(na.omit(Dim_Length)) else NA_real_,
               Dim_Width = if (all(is.na(Dim_Width))) NA_real_ else if (length(unique(na.omit(Dim_Width))) == 1) unique(na.omit(Dim_Width)) else NA_real_,
               Draught = if (all(is.na(Draught))) NA_real_ else if (length(unique(na.omit(Draught))) == 1) unique(na.omit(Draught)) else NA_real_,
-              Destination = first(Destination, na_rm = TRUE),
+              Destination = if (all(is.na(Destination))) NA else if (length(unique(na.omit(Destination))) == 1) unique(na.omit(Destination)) else NA,
               stopped_sog = first(stopped_sog, na_rm = TRUE),
               npoints = n(),
               geometry = st_combine(geometry)) %>%
@@ -62,6 +62,9 @@ vectorize_segments <- function(df, dest, daynight){
   }
   
   AISsf <- AISsf1 %>% 
+    
+    # Remove extraneous spaces from destination columns 
+    mutate(Destination = trimws(Destination)) %>% 
     
     # Add in destination codes 
     left_join(., dest, by=c("Destination" = "Destntn")) %>% 
