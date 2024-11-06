@@ -26,7 +26,7 @@
 module purge
 module load R/4.2.2-foss-2022b GDAL/3.6.2-foss-2022b 
 
-Rscript 1-Clean.R $year 
+Rscript Master_Script.R $year 
 
 # show information on resources used during job processing
 qstat –f ${PBS_JOBID} 

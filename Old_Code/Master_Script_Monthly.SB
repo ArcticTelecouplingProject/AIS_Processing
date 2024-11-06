@@ -28,7 +28,7 @@ module load GCC/8.3.0 OpenMPI/3.1.4 R/4.0.2 GDAL/3.0.2-Python-3.7.4 stars
 
 export R_LIBS_USER=/mnt/home/kapsarke/R_Lib/4.0.2
 
-Rscript 1-Clean.R $year
+Rscript Master_Script.R $year
 
 # show information on resources used during job processing
 qstat –f ${PBS_JOBID} 

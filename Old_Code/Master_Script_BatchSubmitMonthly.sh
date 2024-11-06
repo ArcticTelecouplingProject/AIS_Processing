@@ -5,5 +5,5 @@ n="ais" # job name
 # Should probably not hardcode this...
 for i in {2015..2022}
 do
-  sbatch --job-name=$n.$i --output=$n.$i.SLURMout --export=year=$i ./1-CleanMonthly.SB
+  sbatch --job-name=$n.$i --output=$n.$i.SLURMout --export=year=$i ./Master_Script_Monthly.SB
 done
