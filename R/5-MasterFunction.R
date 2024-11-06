@@ -153,10 +153,10 @@ process_ais_data <- function(csvList,
     print(paste0(MoName, " vectorization complete."))
     
     print(runtimes)
-    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Vector_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
+    write.csv(runtimes, paste0("../Data_Processed_V3/Metadata/Vector_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
     
     print(metadata) 
-    write.csv(metadata, paste0("../Data_Processed_V3_Test/Metadata/Vector_Metadata_", MoName, "_DayNight", daynight, ".csv"))
+    write.csv(metadata, paste0("../Data_Processed_V3/Metadata/Vector_Metadata_", MoName, "_DayNight", daynight, ".csv"))
   }
 
   #### HEX -------------------------------------------------------------------
@@ -166,7 +166,7 @@ process_ais_data <- function(csvList,
     hex_data <- clean_data %>% calculate_hex_grid_summary(., hexgrid, daynight)
 
     # Save data in vector format
-    write_sf(hex_data, paste0("../Data_Processed_V3_Test/Hex/Hex_", MoName, "_DayNight", daynight, ".shp"))
+    write_sf(hex_data, paste0("../Data_Processed_V3/Hex/Hex_", MoName, "_DayNight", daynight, ".shp"))
     
     # Measure import time
     runtimes$hex <- (proc.time() - start)[[3]] / 60
@@ -174,10 +174,10 @@ process_ais_data <- function(csvList,
     print(paste0(MoName, " hex generation complete."))
     
     print(runtimes)
-    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Hex_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
+    write.csv(runtimes, paste0("../Data_Processed_V3/Metadata/Hex_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
     
     print(metadata) 
-    write.csv(runtimes, paste0("../Data_Processed_V3_Test/Metadata/Hex_Metadata_", MoName, "_DayNight", daynight, ".csv"))
+    write.csv(runtimes, paste0("../Data_Processed_V3/Metadata/Hex_Metadata_", MoName, "_DayNight", daynight, ".csv"))
   }
 
   # #### RASTER --------------------------------------------------------------

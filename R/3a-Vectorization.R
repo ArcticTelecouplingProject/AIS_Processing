@@ -103,7 +103,7 @@ save_segments <- function(df, MoName, daynight){
     # Save data in vector format
     if(length(AISfilteredType$newsegid) > 0){
       st_write(AISfilteredType,
-               paste0("../Data_Processed_V3_Test/Vector/Tracks_DayNight", 
+               paste0("../Data_Processed_V3/Vector/Tracks_DayNight", 
                       daynight, "_",MoName,"-",allTypes[k],".shp"),
                append = F)
     }
