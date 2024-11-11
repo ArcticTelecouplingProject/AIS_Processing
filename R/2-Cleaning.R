@@ -259,7 +259,7 @@ id_ship_type <- function(df){
     group_by(scramblemmsi) %>%
     filter(count == max(count)) %>%
     summarize(
-      Ship_Type = if (n() == 1) Ship_Type else NA_character_,
+      Ship_Type = ifelse(n() == 1, Ship_Type, NA),
       .groups = "drop"
     )
   
