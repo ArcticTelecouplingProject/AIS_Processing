@@ -61,10 +61,12 @@ vectorize_segments <- function(df, dest, daynight){
     AISsf1 <- AISsf1 %>% dplyr::select(-Time_Of_Day)
   }
   
+  dest$Destntn <-  trimws(gsub(" {2,}", " ", dest$Destntn))
+  
   AISsf <- AISsf1 %>% 
     
     # Remove extraneous spaces from destination columns 
-    mutate(Destination = trimws(Destination)) %>% 
+    mutate(Destination = gsub(" {2,}", " ", Destination)) %>% 
     
     # Add in destination codes 
     left_join(., dest, by=c("Destination" = "Destntn")) %>% 
