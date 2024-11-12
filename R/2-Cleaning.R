@@ -171,7 +171,7 @@ create_segments <- function(df) {
     group_by(scramblemmsi) %>% 
     mutate(newline = cumsum(cut_line), 
            newseg = cumsum(status_change) + 1) %>% 
-    mutate(newsegid = stringi::stri_c(scramblemmsi, newline, newseg, sep = "-"))
+    mutate(newsegid = stringi::stri_c(scramblemmsi, year(Time), month(Time), newline, newseg, sep = "-"))
 }
 
 #' Expand segments to connect track lines
