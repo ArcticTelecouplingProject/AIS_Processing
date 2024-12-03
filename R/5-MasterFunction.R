@@ -26,13 +26,6 @@ process_ais_data <- function(csvList,
                              timediff_threshold = 6, 
                              distdiff_threshold = 60) {
   
-  # output = "vector"
-  # speed_threshold = 2
-  # time_threshold = 1
-  # timediff_threshold = 6
-  # distdiff_threshold = 60
-  # daynight <- FALSE
-
   # Start segment timer to measure processing time
   start <- proc.time()
   
