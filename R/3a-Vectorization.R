@@ -30,30 +30,41 @@ vectorize_segments <- function(df, dest, daynight){
     # Create 1 line per AIS ID
     group_by(newsegid) %>%
     # Summarize with common columns
-    summarize(scramblemmsi = first(scramblemmsi),
-              Time_Start = as.character(first(Time)),
-              Time_End = as.character(last(Time)),
-              Time_Of_Day = ifelse(daynight, 
-                                   case_when(daynight ~ first(timeofday, na_rm = TRUE),
-                TRUE ~ NA_character_), NA
-              ),
-              AIS_ID = first(AIS_ID, na_rm=TRUE),
-              SOG_Median = median(SOG, na.rm = TRUE),
-              SOG_Mean = mean(SOG, na.rm = TRUE),
-              Ship_Type = if (all(is.na(Ship_Type))) NA else if (length(unique(na.omit(Ship_Type))) == 1) unique(na.omit(Ship_Type)) else NA,
-              AIS_Type = if (all(is.na(AIS_Type))) NA else if (length(unique(na.omit(AIS_Type))) == 1) unique(na.omit(AIS_Type)) else NA,
-              Country = if (all(is.na(Country))) NA else if (length(unique(na.omit(Country))) == 1) unique(na.omit(Country)) else NA,
-              Dim_Length = if (all(is.na(Dim_Length))) NA_real_ else if (length(unique(na.omit(Dim_Length))) == 1) unique(na.omit(Dim_Length)) else NA_real_,
-              Dim_Width = if (all(is.na(Dim_Width))) NA_real_ else if (length(unique(na.omit(Dim_Width))) == 1) unique(na.omit(Dim_Width)) else NA_real_,
-              Draught = if (all(is.na(Draught))) NA_real_ else if (length(unique(na.omit(Draught))) == 1) unique(na.omit(Draught)) else NA_real_,
-              Destination = if (all(is.na(Destination))) NA else if (length(unique(na.omit(Destination))) == 1) unique(na.omit(Destination)) else NA,
-              stopped_sog = first(stopped_sog, na_rm = TRUE),
-              npoints = n(),
-              geometry = st_combine(geometry)) %>%
+    summarize(
+      scramblemmsi = first(scramblemmsi),
+      Time_Start = as.character(first(Time)),
+      Time_End = as.character(last(Time)),
+      Time_Of_Day = ifelse(daynight, 
+                           case_when(daynight ~ first(timeofday, na_rm = TRUE),
+                                     TRUE ~ NA_character_), NA
+      ),
+      AIS_ID = first(AIS_ID, na_rm=TRUE),
+      SOG_Median = median(SOG, na.rm = TRUE),
+      SOG_Mean = mean(SOG, na.rm = TRUE),
+      Ship_Type = if (all(is.na(Ship_Type))) NA else if (length(unique(na.omit(Ship_Type))) == 1) unique(na.omit(Ship_Type)) else NA,
+      AIS_Type = if (all(is.na(AIS_Type))) NA else if (length(unique(na.omit(AIS_Type))) == 1) unique(na.omit(AIS_Type)) else NA,
+      Country = if (all(is.na(Country))) NA else if (length(unique(na.omit(Country))) == 1) unique(na.omit(Country)) else NA,
+      Dim_Length = if (all(is.na(Dim_Length))) NA_real_ else if (length(unique(na.omit(Dim_Length))) == 1) unique(na.omit(Dim_Length)) else NA_real_,
+      Dim_Width = if (all(is.na(Dim_Width))) NA_real_ else if (length(unique(na.omit(Dim_Width))) == 1) unique(na.omit(Dim_Width)) else NA_real_,
+      Draught = if (all(is.na(Draught))) NA_real_ else if (length(unique(na.omit(Draught))) == 1) unique(na.omit(Draught)) else NA_real_,
+      Destination = if (all(is.na(Destination))) NA else if (length(unique(na.omit(Destination))) == 1) unique(na.omit(Destination)) else NA,
+      stopped_sog = first(stopped_sog, na_rm = TRUE),
+      npoints = n(),
+      geometry = st_combine(geometry)
+    ) %>%
     mutate(
       Time_Of_Day =  factor(Time_Of_Day, levels = c("day", "night")),
-      geometry = st_cast(geometry, "LINESTRING")) %>%
-    ungroup() %>% 
+      geometry = st_cast(geometry, "LINESTRING")
+    ) %>%
+    # Extract first and last points of the LINESTRING
+    rowwise() %>%
+    mutate(
+      x_first = st_coordinates(geometry)[1, 1],
+      y_first = st_coordinates(geometry)[1, 2],
+      x_last = st_coordinates(geometry)[nrow(st_coordinates(geometry)), 1],
+      y_last = st_coordinates(geometry)[nrow(st_coordinates(geometry)), 2]
+    ) %>%
+    ungroup() %>%
     st_make_valid() %>%
     filter(npoints > 1)
   
@@ -69,7 +80,7 @@ vectorize_segments <- function(df, dest, daynight){
     mutate(Destination = gsub(" {2,}", " ", Destination)) %>% 
     
     # Add in destination codes 
-    left_join(., dest, by=c("Destination" = "Destntn")) %>% 
+    left_join(., dest, by=c("Destination" = "Destntn"), multiple="first") %>% 
     
     # Calculate total distance travelled
     mutate(Length_Km = as.numeric(st_length(.)/1000)) %>% 
