@@ -217,7 +217,7 @@ expand_segments <- function(df) {
       expanded_segment
     }) %>%
     ungroup() %>%
-    mutate(newsegid = stringi::stri_c(scramblemmsi, newline, newseg, sep = "-")) %>%
+    mutate(newsegid = stringi::stri_c(scramblemmsi, year(Time), month(Time), newline, newseg, sep = "-")) %>%
     arrange(scramblemmsi, Time, newseg)
 }
 
