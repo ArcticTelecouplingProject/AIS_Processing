@@ -63,42 +63,5 @@ lapply(csv_files, process_csv)
 message("Processing complete.")
 
 
-################################################################################
-# Check for number of signals per day 
 
 
-# Define the directory where the new CSV files are saved
-dir <- "/mnt/home/kapsarke/Documents/AIS/Data_Raw/2023-2024/"
-
-# Get a list of all the processed CSV files
-csv_files <- list.files(dir, pattern = "Historical_AOI", full.names = TRUE)
-
-# Initialize an empty data frame
-summary_df <- data.frame(Year = integer(), Month = integer(), Date = character(), Total_Rows = integer(), stringsAsFactors = FALSE)
-
-# Loop through each file and extract information
-for (file in csv_files) {
-  # Read the CSV file
-  df <- fread(file)
-  print(file)
-  
-  # Ensure the timestamp column exists
-  if (!"position_timestamp" %in% colnames(df)) {
-    message("Skipping file (no timestamp column): ", file)
-    next
-  }
-  
-  # Convert position_timestamp to Date format (removing time)
-  df[, Date := as.Date(position_timestamp, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")]
-  
-  # Aggregate counts by Date (ignoring time)
-  date_summary <- df[, .(Total_Rows = .N), by = .(Date)]
-  
-  # Append to summary dataframe
-  summary_df <- rbind(summary_df, date_summary, use.names = TRUE, fill = TRUE)
-}
-
-# Print or save the summary
-print(summary_df)
-# Optionally, save it as a CSV for future reference
-write.csv(summary_df, file.path(output_dir, "file_summary_by_date.csv"), row.names = FALSE)
