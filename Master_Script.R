@@ -12,8 +12,8 @@ library(zoo)
 start <- proc.time()
 
 # Import year from sb file 
-# year <- 2022
-year <- commandArgs(trailingOnly = TRUE)
+year <- 2023
+# year <- commandArgs(trailingOnly = TRUE)
 
 # Load in files 
 if(year %in% c(2021:2022)){
@@ -52,13 +52,32 @@ if(year %in% 2015:2020){
   nov <- files[grepl("-11-", files)]
   dec <- files[grepl("-12-", files)]
 }
+if(year %in% 2023:2024){
+  # dir <- paste0("D:/AlaskaConservation_AIS_20210225/Data_Raw/", year, "/")
+  dir <- paste0("../Data_Raw/", year, "/")
+  files <- paste0(dir, list.files(dir, pattern='.csv'))
+  # Iterate through and create list of lists of file names 
+  jan <- files[grepl("-01_", files)]
+  feb <- files[grepl("-02_", files)]
+  mar <- files[grepl("-03_", files)]
+  apr <- files[grepl("-04_", files)]
+  may <- files[grepl("-05_", files)]
+  jun <- files[grepl("-06_", files)]
+  jul <- files[grepl("-07_", files)]
+  aug <- files[grepl("-08_", files)]
+  sep <- files[grepl("-09_", files)]
+  oct <- files[grepl("-10_", files)]
+  nov <- files[grepl("-11_", files)]
+  dec <- files[grepl("-12_", files)]
+}
+
 
 # Create a list of lists of all csv file names grouped by month
 csvsByMonth <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
 
 flags <- read.csv("../Data_Raw/FlagCodes.csv")
 
-scrambleids <- read.csv("../Data_Raw/ScrambledMMSI_Keys_2015-2022.csv") %>%
+scrambleids <- read.csv("../Data_Raw/ScrambledMMSI_Keys_2015-2024.csv") %>%
   dplyr::select(MMSI, scramblemmsi)
 
 dest <- read.csv("../Data_Raw/Destination_Recoding.csv")
@@ -74,16 +93,16 @@ lapply(r_files[2:length(r_files)], source)
 
 
 ######################## TESTING ########################  
-# csvsByMonth <- list(jul[1:2])
-# csvList <- csvsByMonth[[1]]
-# output <- "vector"
-# daynight <- TRUE
-# output = "vector"
-# speed_threshold = 2
-# time_threshold = 1
-# timediff_threshold = 6
-# distdiff_threshold = 60
-# daynight <- FALSE
+csvsByMonth <- list(jul[1:2])
+csvList <- csvsByMonth[[1]]
+output <- "vector"
+daynight <- TRUE
+output = "vector"
+speed_threshold = 2
+time_threshold = 1
+timediff_threshold = 6
+distdiff_threshold = 60
+daynight <- FALSE
 
 # Example usage
 # process_ais_data(csvList, year, flags, dest,
