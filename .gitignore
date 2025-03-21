@@ -15,3 +15,6 @@
 
 # Scrambled MMSI generation script 
 0-MMSIScramble-DONOTSHARE.R 
+
+# SLURM output files 
+.out
