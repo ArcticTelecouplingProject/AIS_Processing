@@ -1,4 +1,5 @@
 
+
 # Load libraries 
 library(tidyverse)
 library(sf)
@@ -12,8 +13,8 @@ library(zoo)
 start <- proc.time()
 
 # Import year from sb file 
-year <- 2023
-# year <- commandArgs(trailingOnly = TRUE)
+# year <- 2024
+year <- commandArgs(trailingOnly = TRUE)
 
 # Load in files 
 if(year %in% c(2021:2022)){
@@ -57,18 +58,18 @@ if(year %in% 2023:2024){
   dir <- paste0("../Data_Raw/", year, "/")
   files <- paste0(dir, list.files(dir, pattern='.csv'))
   # Iterate through and create list of lists of file names 
-  jan <- files[grepl("-01_", files)]
-  feb <- files[grepl("-02_", files)]
-  mar <- files[grepl("-03_", files)]
-  apr <- files[grepl("-04_", files)]
-  may <- files[grepl("-05_", files)]
-  jun <- files[grepl("-06_", files)]
-  jul <- files[grepl("-07_", files)]
-  aug <- files[grepl("-08_", files)]
-  sep <- files[grepl("-09_", files)]
-  oct <- files[grepl("-10_", files)]
-  nov <- files[grepl("-11_", files)]
-  dec <- files[grepl("-12_", files)]
+  jan <- files[grepl(paste0(year, "-01"), files)]
+  feb <- files[grepl(paste0(year, "-02"), files)]
+  mar <- files[grepl(paste0(year, "-03"), files)]
+  apr <- files[grepl(paste0(year, "-04"), files)]
+  may <- files[grepl(paste0(year, "-05"), files)]
+  jun <- files[grepl(paste0(year, "-06"), files)]
+  jul <- files[grepl(paste0(year, "-07"), files)]
+  aug <- files[grepl(paste0(year, "-08"), files)]
+  sep <- files[grepl(paste0(year, "-09"), files)]
+  oct <- files[grepl(paste0(year, "-10"), files)]
+  nov <- files[grepl(paste0(year, "-11"), files)]
+  dec <- files[grepl(paste0(year, "-12"), files)]
 }
 
 
@@ -89,22 +90,22 @@ hexgrid <- st_read("../Data_Raw/BlankHexes.shp")
 # Get a list of all R script files in the R folder 
 r_files <- list.files(path = "./R", pattern = "\\.R$", full.names = TRUE)
 # Source each file to load the functions into memory
-lapply(r_files[2:length(r_files)], source)
+lapply(r_files, source)
 
 
 ######################## TESTING ########################  
-csvsByMonth <- list(jul[1:2])
-csvList <- csvsByMonth[[1]]
-output <- "vector"
-daynight <- TRUE
-output = "vector"
-speed_threshold = 2
-time_threshold = 1
-timediff_threshold = 6
-distdiff_threshold = 60
-daynight <- FALSE
-
-# Example usage
+# csvsByMonth <- list(jul)
+# csvList <- csvsByMonth[[1]][1:2]
+# output <- "vector"
+# daynight <- TRUE
+# output = "vector"
+# speed_threshold = 2
+# time_threshold = 1
+# timediff_threshold = 6
+# distdiff_threshold = 60
+# daynight <- FALSE
+# 
+# # Example usage
 # process_ais_data(csvList, year, flags, dest,
 #                              daynight = TRUE,
 #                              output = "vector",
@@ -123,8 +124,13 @@ res=list()
 # foreach and %dopar% work together to implement the parallelization
 # note that you have to tell each core what packages you need (another reason to minimize library use), so it can pull those over
 # I'm using tidyverse since it combines dplyr and tidyr into one library (I think)
-res=foreach(i=1:length(csvsByMonth),.packages=c("tidyverse", "sf", "doParallel", "stringi"),
-            .errorhandling='pass',.verbose=T,.multicombine=TRUE) %dopar% 
+res=foreach(i=1:length(csvsByMonth),
+# res=foreach(i=1:2,
+            .packages=c("tidyverse", "sf", "doParallel", "stringi", "data.table"),
+            # .errorhandling='pass',
+            .errorhandling='stop',
+            .verbose=T,
+            .multicombine=TRUE) %dopar% 
             process_ais_data(csvList=csvsByMonth[[i]], 
                              year = year, 
                              flags = flags, 
@@ -133,6 +139,21 @@ res=foreach(i=1:length(csvsByMonth),.packages=c("tidyverse", "sf", "doParallel",
                              output = "vector",
                              hexgrid = hexgrid,
                              scrambleids = scrambleids)
+
+# Find which iterations failed
+failed_indices <- which(sapply(res, inherits, "try-error"))
+
+# Print the errors from failed iterations
+if (length(failed_indices) > 0) {
+  cat("Errors occurred in the following iterations:\n")
+  print(failed_indices)
+  
+  # Print detailed error messages
+  for (i in failed_indices) {
+    cat("\nError in iteration", i, ":\n")
+    print(res[[i]])
+  }
+}
 
 # Elapsed time and running information
 tottime <- proc.time() - start
