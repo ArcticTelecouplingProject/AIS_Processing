@@ -4,8 +4,8 @@
 library(data.table)
 
 # Define the directory where your CSV files are stored
-input_dir <- "/mnt/home/kapsarke/Documents/AIS/Data_Raw/2023-2024/orig_file_names"
-output_dir <- "/mnt/home/kapsarke/Documents/AIS/Data_Raw/2023-2024/"
+input_dir <- "/mnt/home/kapsarke/Documents/AIS/Data_Raw/2023-2024_Raw_OriginalFileNames"
+output_dir <- "/mnt/home/kapsarke/Documents/AIS/Data_Raw/test_2023-2024/"
 
 # Create output directory if it doesn't exist
 if (!dir.exists(output_dir)) {
@@ -61,7 +61,3 @@ process_csv <- function(file_path) {
 lapply(csv_files, process_csv)
 
 message("Processing complete.")
-
-
-
-

@@ -25,5 +25,7 @@ print(ais_dates)
 write.csv(ais_dates, "/mnt/home/kapsarke/Documents/AIS/AIS_2023-2024_dates.csv")
 
 ais_dates <- read.csv("/mnt/home/kapsarke/Documents/AIS/AIS_2023-2024_dates.csv")
+
+
 t <- as.Date(unique(ais_dates$x))
 t[!(t %in% dates)]
