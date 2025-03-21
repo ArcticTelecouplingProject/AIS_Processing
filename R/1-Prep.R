@@ -1,4 +1,4 @@
-#' Load and Process CSV Files for 2021-2022
+#' Load and Process CSV Files for 2023-2024
 #'
 #' @param csvList List of CSV file paths
 #' @param flags Data frame with country flags information
@@ -13,7 +13,7 @@ load_and_process_2023_2024 <- function(csvList, flags) {
   print(paste("Processing", yr, mnth))
   
   # Read in CSV files, treating empty strings and "NA" as missing values
-  temp <- lapply(csvList, fread, header = TRUE, na.strings = c("", "NA"))
+  temp <- lapply(csvList, data.table::fread, header = TRUE, na.strings = c("", "NA"))
   AIScsv <- do.call(rbind, temp)  # Combine all CSV files into one data frame
   
   # Rename columns and process data to match required format
@@ -32,7 +32,8 @@ load_and_process_2023_2024 <- function(csvList, flags) {
            Navigational_status = status, 
            Dim_Length = length, 
            Dim_Width = width) %>%
-    mutate(Time = lubridate::ymd_hms(Time, tz = "GMT"),  # Convert time to datetime with GMT timezone
+    mutate(Time = suppressWarnings(lubridate::ymd_hms(Time, tz = "GMT")),  # Convert time to datetime with GMT timezone
+           # Invalid times become NA
            temp = as.numeric(substr(MMSI, 1, 3)),  # Extract country code from MMSI
            MMSI = as.integer(MMSI)) %>%  # Convert MMSI to integer
     left_join(., flags, by = join_by(temp == MID)) %>%  # Join with flags data to get country information
@@ -88,8 +89,8 @@ load_and_process_2021_2022 <- function(csvList, flags) {
                   Latitude, 
                   Time,
                   SOG, Ship_Type, 
-                  Country, Vessel_
-                  Name, 
+                  Country,
+                  Vessel_Name, 
                   IMO, 
                   Draught, 
                   Destination, 

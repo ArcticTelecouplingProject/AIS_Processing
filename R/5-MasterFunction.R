@@ -38,6 +38,8 @@ process_ais_data <- function(csvList,
     AIScsv <- load_and_process_2021_2022(csvList, flags)
   } else if (year %in% c(2015:2020)) {
     AIScsv <- load_and_process_2015_2020(csvList, flags)
+  } else if (year %in% c(2023:2024)){
+    AIScsv <- load_and_process_2023_2024(csvList, flags)
   }
   
   MoName <- paste0(year(AIScsv$Time[1]), sprintf("%02d", month(AIScsv$Time[1])))
@@ -63,14 +65,14 @@ process_ais_data <- function(csvList,
     
     # Add scrambled AIS IDs and remove original MMSI
     add_scrambled_ids(scrambleids = scrambleids) %>%
-    
+
     # Remove frost flowers (multiple messages from the same exact location)
     remove_frost_flowers(.) %>% 
     { metadata <<- update_metadata(metadata, "ff", ., column = "scramblemmsi"); . } %>%
-    
+
     # Transform to spatial object and transform coordinates
-     transform_to_spatial() %>%
-    
+    transform_to_spatial() %>%
+
     # Calculate speed and remove duplicate or invalid points
     calculate_speed(.) %>% 
     { metadata <<- update_metadata(metadata, "redund", ., column = "scramblemmsi"); . } %>%
@@ -87,7 +89,7 @@ process_ais_data <- function(csvList,
     # Identify beginning of new segments
     mutate(cut_line = ifelse(timediff > timediff_threshold | distdiff > distdiff_threshold, TRUE, FALSE)) %>%
     mutate(cut_line = ifelse(is.na(cut_line), TRUE, cut_line)) %>% 
-    
+
     # Identify vessels traveling below speed_threshold for more than time_threshold
     identify_stopped_vessels(speed_threshold = speed_threshold, time_threshold = time_threshold) %>%
     
@@ -97,13 +99,15 @@ process_ais_data <- function(csvList,
     # Identify ship types
     id_ship_type() %>%
     
+    # Save output points 
+    save_points(., file_path = "../Data_Processed_V4/Points/") %>%
+    
     # Measure import time
     { runtimes$cleantime <<- (proc.time() - start)[[3]] / 60; . } %>%
     
     {print(paste0(MoName, " cleaning complete.")); .} %>% 
     
     #### SEGMENTATION ----------------------------------------------------------
-    
     # Create segments for AIS data
     create_segments() %>%
 
@@ -146,10 +150,10 @@ process_ais_data <- function(csvList,
     print(paste0(MoName, " vectorization complete."))
     
     print(runtimes)
-    write.csv(runtimes, paste0("../Data_Processed_V3/Metadata/Vector_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
+    write.csv(runtimes, paste0("../Data_Processed_V4/Metadata/Vector_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
     
     print(metadata) 
-    write.csv(metadata, paste0("../Data_Processed_V3/Metadata/Vector_Metadata_", MoName, "_DayNight", daynight, ".csv"))
+    write.csv(metadata, paste0("../Data_Processed_V4/Metadata/Vector_Metadata_", MoName, "_DayNight", daynight, ".csv"))
   }
 
   #### HEX -------------------------------------------------------------------
@@ -159,7 +163,7 @@ process_ais_data <- function(csvList,
     hex_data <- clean_data %>% calculate_hex_grid_summary(., hexgrid, daynight)
 
     # Save data in vector format
-    write_sf(hex_data, paste0("../Data_Processed_V3/Hex/Hex_", MoName, "_DayNight", daynight, ".shp"))
+    write_sf(hex_data, paste0("../Data_Processed_V4/Hex/Hex_", MoName, "_DayNight", daynight, ".shp"))
     
     # Measure import time
     runtimes$hex <- (proc.time() - start)[[3]] / 60
@@ -167,10 +171,10 @@ process_ais_data <- function(csvList,
     print(paste0(MoName, " hex generation complete."))
     
     print(runtimes)
-    write.csv(runtimes, paste0("../Data_Processed_V3/Metadata/Hex_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
+    write.csv(runtimes, paste0("../Data_Processed_V4/Metadata/Hex_Runtimes_", MoName, "_DayNight", daynight, ".csv"))
     
     print(metadata) 
-    write.csv(runtimes, paste0("../Data_Processed_V3/Metadata/Hex_Metadata_", MoName, "_DayNight", daynight, ".csv"))
+    write.csv(runtimes, paste0("../Data_Processed_V4/Metadata/Hex_Metadata_", MoName, "_DayNight", daynight, ".csv"))
   }
 
   # #### RASTER --------------------------------------------------------------

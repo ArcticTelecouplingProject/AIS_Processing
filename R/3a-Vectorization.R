@@ -32,8 +32,8 @@ vectorize_segments <- function(df, dest, daynight){
     # Summarize with common columns
     summarize(
       scramblemmsi = first(scramblemmsi),
-      Time_Start = as.character(first(Time)),
-      Time_End = as.character(last(Time)),
+      Time_Start = first(Time),
+      Time_End = last(Time),
       Time_Of_Day = ifelse(daynight, 
                            case_when(daynight ~ first(timeofday, na_rm = TRUE),
                                      TRUE ~ NA_character_), NA
@@ -116,7 +116,7 @@ save_segments <- function(df, MoName, daynight){
     # Save data in vector format
     if(length(AISfilteredType$newsegid) > 0){
       st_write(AISfilteredType,
-               paste0("../Data_Processed_V3/Vector/Tracks_DayNight", 
+               paste0("../Data_Processed_V4/Vector/Tracks_DayNight", 
                       daynight, "_",MoName,"-",allTypes[k],".shp"),
                append = F)
     }

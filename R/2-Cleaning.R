@@ -77,7 +77,9 @@ transform_to_spatial <- function(df, crs = 3338) {
 #' @return Data frame with calculated speed and filtered duplicate or invalid points
 calculate_speed <- function(df) {
   if(!("x" %in% colnames(df) & "y" %in% colnames(df))){
-    df[, c("x", "y")] <- st_coordinates(df)
+    df <- cbind(df, st_coordinates(df)) %>% 
+      rename(x = X, 
+             y = Y)
   }
   dfnew <- df %>% 
     st_drop_geometry() %>%
@@ -271,8 +273,37 @@ id_ship_type <- function(df){
   
   dfnew$AIS_Type[dfnew$Ship_Type <100 & is.na(dfnew$AIS_Type)] <- "Other"
   dfnew$AIS_Type[is.na(dfnew$AIS_Type)] <- "Unknown" 
-  dfnew$AIS_Type[dfnew$AIS_Type == 0] <- "Unknown"  
+  dfnew$AIS_Type[dfnew$Ship_Type %in% c(0:19)] <- "Unknown"  
   
   return(dfnew)
+}
+
+
+#' Save output AIS signals as points 
+#'
+#' @param df Data frame containing AIS segments
+#'
+#' @return Saved data 
+save_points <- function(df, file_path) {
+
+  # Convert Time column to Date format (removes time part)
+  dfnew <- df %>% mutate(Date = format(as.Date(Time), "%Y_%m_%d"))
+  
+  # Loop through unique dates and save a separate file for each day
+  unique_dates <- unique(dfnew$Date)
+  
+  for (date in unique_dates) {
+    df_day <- dfnew %>% filter(Date == date)
+    
+    # Construct file name (ensuring two-digit day format)
+    file_name = paste0("Clean_Points_", df_day$Date[1], ".csv" )
+    full_path <- file.path(file_path, file_name)
+    
+    # Save CSV without geometry
+    write.csv(st_drop_geometry(df_day), file = full_path, row.names = FALSE)
+    
+    message("Saved: ", file_name)
+  }
+  return(df)
 }
 
