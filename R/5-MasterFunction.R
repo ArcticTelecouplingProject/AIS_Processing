@@ -100,7 +100,7 @@ process_ais_data <- function(csvList,
     id_ship_type() %>%
     
     # Save output points 
-    save_points(., file_path = "../Data_Processed_V4/Points/") %>%
+    # save_points(., file_path = "../Data_Processed_V4/Points/") %>%
     
     # Measure import time
     { runtimes$cleantime <<- (proc.time() - start)[[3]] / 60; . } %>%
