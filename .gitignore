@@ -17,4 +17,4 @@
 0-MMSIScramble-DONOTSHARE.R 
 
 # SLURM output files 
-.out
+*.out
