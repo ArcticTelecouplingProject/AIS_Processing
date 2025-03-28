@@ -9,11 +9,11 @@
 ################################################################################
 
 # Load required libraries 
-library(rgdal)   # For spatial data operations
-library(raster)  # For raster manipulation
-library(maptools) # For spatial tools
-library(sf)      # For reading vector data
-library(spatstat.geom) # For spatial statistics
+# library(rgdal)   # For spatial data operations
+# library(raster)  # For raster manipulation
+# library(maptools) # For spatial tools
+# library(sf)      # For reading vector data
+# library(spatstat.geom) # For spatial statistics
 
 #' AIS Rasterization Function
 #'
