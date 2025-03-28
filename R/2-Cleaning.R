@@ -35,7 +35,7 @@ remove_navigation_aids <- function(df) {
 add_scrambled_ids <- function(df, scrambleids) {
   df %>% 
     left_join(scrambleids, by = "MMSI") %>% 
-    select(-MMSI) %>% 
+    dplyr::select(-MMSI) %>% 
     mutate(AIS_ID = paste0(scramblemmsi, format(as.POSIXct(Time), "%Y%m%d")))
 }
 
@@ -54,7 +54,7 @@ remove_frost_flowers <- function(df) {
   df %>% 
     mutate(tempid = paste0(AIS_ID, Longitude, Latitude)) %>% 
     filter(!(tempid %in% ff$tempid)) %>% 
-    select(-tempid)
+    dplyr::select(-tempid)
 }
 
 #' Make data frame into spatial object and transform coordinates
@@ -138,7 +138,7 @@ identify_stopped_vessels <- function(df, speed_threshold, time_threshold) {
       status_change = ifelse(stopped_sog != lag(stopped_sog, default = first(stopped_sog)), TRUE, FALSE)
     ) %>%
     ungroup() %>%
-    select(-below_threshold, -time_diff, -time_diff_below_threshold, -cum_time_below_threshold, -below_hr_threshold, -start_below_threshold, -below_threshold_group) %>%
+    dplyr::select(-below_threshold, -time_diff, -time_diff_below_threshold, -cum_time_below_threshold, -below_hr_threshold, -start_below_threshold, -below_threshold_group) %>%
     arrange(scramblemmsi, Time)
 }
 
@@ -266,7 +266,7 @@ id_ship_type <- function(df){
     )
   
   dfnew <- df %>% 
-    select(-Ship_Type) %>% 
+    dplyr::select(-Ship_Type) %>% 
     left_join(scrmb_types, by = "scramblemmsi") %>% 
     mutate(Ship_Type = as.numeric(Ship_Type)) %>% 
     left_join(types, by = "Ship_Type") 
