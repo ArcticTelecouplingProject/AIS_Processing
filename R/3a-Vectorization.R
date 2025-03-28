@@ -83,7 +83,9 @@ vectorize_segments <- function(df, dest, daynight){
     left_join(., dest, by=c("Destination" = "Destntn"), multiple="first") %>% 
     
     # Calculate total distance travelled
-    mutate(Length_Km = as.numeric(st_length(.)/1000)) %>% 
+    mutate(Length_Km = as.numeric(st_length(.)/1000),
+           Time_Start = format(Time_Start, "%Y-%m-%d %H:%M:%S"),
+           Time_End = format(Time_Start, "%Y-%m-%d %H:%M:%S")) %>% 
     
     # Remove any non-linestring types if still remaining after st_make_valid
     st_collection_extract("LINESTRING", warn = FALSE)
