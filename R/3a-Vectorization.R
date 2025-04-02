@@ -38,7 +38,6 @@ vectorize_segments <- function(df, dest, daynight){
                            case_when(daynight ~ first(timeofday, na_rm = TRUE),
                                      TRUE ~ NA_character_), NA
       ),
-      AIS_ID = first(AIS_ID, na_rm=TRUE),
       SOG_Median = median(SOG, na.rm = TRUE),
       SOG_Mean = mean(SOG, na.rm = TRUE),
       Ship_Type = if (all(is.na(Ship_Type))) NA else if (length(unique(na.omit(Ship_Type))) == 1) unique(na.omit(Ship_Type)) else NA,

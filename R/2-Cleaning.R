@@ -201,7 +201,7 @@ expand_segments <- function(df) {
               # Then attach the last point of being stopped to the first point of the moving segment
               last_point <- last(segment[segment$newseg == (i-1),])
               last_point[1, setdiff(names(last_point), 
-                                    c("scramblemmsi", "Time", "AIS_Type", "Ship_Type", "SOG", "status_change", "cut_line", "newseg", "newline", "x", "y", "timeofday"))] <- NA
+                                    c("scramblemmsi", "Time", "AIS_ID", "AIS_Type", "Ship_Type", "SOG", "status_change", "cut_line", "newseg", "newline", "x", "y", "timeofday"))] <- NA
               last_point$status_change <- FALSE
               last_point$newseg <- i
               last_point$stopped_sog <- 0
