@@ -48,7 +48,7 @@ vectorize_segments <- function(df, dest, daynight){
       Dim_Width = if (all(is.na(Dim_Width))) NA_real_ else if (length(unique(na.omit(Dim_Width))) == 1) unique(na.omit(Dim_Width)) else NA_real_,
       Draught = if (all(is.na(Draught))) NA_real_ else if (length(unique(na.omit(Draught))) == 1) unique(na.omit(Draught)) else NA_real_,
       Destination = if (all(is.na(Destination))) NA else if (length(unique(na.omit(Destination))) == 1) unique(na.omit(Destination)) else NA,
-      stopped_sog = if (all(is.na(stopped_sog))) NA else if (length(unique(na.omit(stopped_sog))) == 1) unique(na.omit(stopped_sog)) else NA,
+      stopped_sog = median(stopped_sog),
       npoints = n(),
       geometry = st_combine(geometry)
     ) %>%
