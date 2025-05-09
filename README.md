@@ -60,8 +60,53 @@ For large AIS datasets, we recommend:
 
 ## Workflow
 
-AIS data are processed in batches ;SLKDAFA;SLKDFJA;LSKDJ
-ADD IN WORKFLOW DIAGRAM 
+## 1. Input Sources
+- **2015–2020 AIS data**
+- **2021–2022 AIS data**
+- **2023–2024 AIS data**
+
+---
+
+## 2. Preparation
+- **Rename files to include month of transmission** *(only for 2023–2024 data)*
+- **Generate scrambled MMSIs** for anonymization
+
+---
+
+**Note:** The following steps are run **on each month of data individually**. The process varies slightly depending on the year of the data.
+
+## 3. Pre-processing
+- **Standardize column names** across input datasets
+- **Ensure data types are correct** (e.g., speed is numeric)
+- **Integrate static and position messages** *(only for 2015–2020 data)*
+
+---
+
+## 4. Cleaning
+- Remove NA latitude/longitude values
+- Remove MMSI entries with fewer than 9 digits
+- Remove "Aids to Navigation"
+- Anonymize ship IDs (e.g., using functions like `scramblemmsi`)
+- Remove multiple repeat messages from the exact same location
+- Identify stopped vessels based on parameters:
+  - Speed < 2 km/hr for >1 hour
+- Determine whether transmission occurred during **daytime or night**
+  - Based on time, location, and solar position
+- Identify ship type
+
+---
+
+## 5. Vectorization (Connecting the Dots)
+- **Connect points into lines**
+  - Do **not** connect if:
+    - Time gap > 6 hours **or**
+    - Distance gap > 60 km
+  - If multiple non-null ship attributes (type, country, size, destination, etc.) appear within a line segment, return NA
+- **Start new line segments** when:
+  - A new month begins
+  - Ship comes to a stop
+  - (Optional) A **day/night transition** occurs *(not used this time)*
+- **Connect segments** when a transition is detected (e.g., last point in one segment is connected to the first of the next)
 
 ## Scripts
 
@@ -86,7 +131,7 @@ ADD IN WORKFLOW DIAGRAM
 - **Functionality**:
   - Loads raw AIS data.
   - Cleans and processes data using functions from scripts 1, 2, 3, and 4.
-  - Outputs processed data in specified formats (vector, hex, raster).
+  - Outputs processed data in specified formats (vector, hex).
 
 ### `Master_Script.R` 
 - **Purpose**: Implements parallelized processing of AIS data.
@@ -99,7 +144,7 @@ ADD IN WORKFLOW DIAGRAM
 
 The following parameters can be modified in `5-MasterFunction.R`:
 
-- `output`: Specifies output format (`"vector"`, `"hex"`, `"raster"`).
+- `output`: Specifies output format (`"vector"`, `"hex"`).
 - `speed_threshold`: Speed below which a vessel is considered stopped (default: 2 knots).
 - `time_threshold`: Minimum stop duration (default: 1 hour).
 - `timediff_threshold`: Time gap defining new track segments (default: 6 hours).
@@ -108,7 +153,7 @@ The following parameters can be modified in `5-MasterFunction.R`:
 
 ## Location of Data
 
-Raw data is stored in `../Data_Raw/`, and processed outputs are saved in `../Data_Processed_V4/` under different formats (vector, hex, raster).
+Raw data is stored in `../Data_Raw/`, and processed outputs are saved in `../Data_Processed_V4/` under different formats (vector, hex, csv summary).
 
 ### Data Accessibility
 
