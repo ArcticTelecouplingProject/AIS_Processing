@@ -281,11 +281,11 @@ write.csv(summary_df_type_codes, "../Data_Processed_V4/2015-2024_CLEAN_summary_v
 ################################################################################
 # Plot timeseries 
 
-# ls <- list.files("../Data_Raw", pattern = "_summary_", full.names = T)
-# 
-# ls <- lapply(ls, read.csv)
-# 
-# summary_df <- do.call(rbind, ls) %>% mutate(Date = as.Date(Date))
+ls <- list.files("../Data_Raw", pattern = "_summary_", full.names = T)
+
+ls <- lapply(ls, read.csv)
+
+summary_df <- do.call(rbind, ls) %>% mutate(Date = as.Date(Date))
 # summary_df <- read.csv("../Data_Processed_V4/2015-2024_CLEAN_summary_by_date.csv") %>% mutate(Date = as.Date(Date))
 summary_df <- read.csv("../Data_Processed_V4/2015-2024_CLEAN_distance_summary_by_month_type.csv") %>% mutate(Date = as.Date(Month))
 

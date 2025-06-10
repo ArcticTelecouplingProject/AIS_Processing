@@ -13,7 +13,7 @@ library(zoo)
 start <- proc.time()
 
 # Import year from sb file 
-# year <- 2024
+# year <- 2022
 year <- commandArgs(trailingOnly = TRUE)
 
 # Load in files 
@@ -94,10 +94,10 @@ lapply(r_files, source)
 
 
 ######################## TESTING ########################  
-# csvsByMonth <- list(jul)
+# csvsByMonth <- list(jan)
 # csvList <- csvsByMonth[[1]][1:2]
 # output <- "vector"
-# daynight <- TRUE
+# daynight <- FALSE
 # output = "vector"
 # speed_threshold = 2
 # time_threshold = 1
@@ -107,7 +107,7 @@ lapply(r_files, source)
 # 
 # # Example usage
 # process_ais_data(csvList, year, flags, dest,
-#                              daynight = TRUE,
+#                              daynight = FALSE,
 #                              output = "vector",
 #                              hexgrid = hexgrid,
 #                              scrambleids = scrambleids)
