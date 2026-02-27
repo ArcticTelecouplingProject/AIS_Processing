@@ -18,6 +18,8 @@
 
 This repository contains code to generate a spatially explicit dataset of shipping intensity in the Pacific Arctic region from January 1, 2015 to December 31, 2024. We calculated shipping intensity based on Automatic Identification System (AIS) data, a type of GPS transmitter required by the International Maritime Organization on all ships over 300 gross tonnes on an international voyage, all cargo ships over 500 gross tonnes, and all passenger ships. We used AIS data received by the Spire (formerly exactEarth) satellite constellation, ensuring spatial coverage regardless of national jurisdiction or remoteness. Our analytical approach converted raw AIS input into monthly raster and vector datasets, separated by vessel type. We first filtered raw AIS messages to remove spurious records and GPS errors, then joined remaining vessel positional records with static messages including descriptive attributes. We further categorized these messages into one of eight general ship types (cargo, fishing, military, recreation, tanker, tug/tow, other, and unknown). These monthly datasets provide a critical snapshot of dynamic commercial and natural systems in the Pacific Arctic region. Recent declines in sea ice have lengthened the duration of the shipping season and have expanded the spatial coverage of large vessel routes, from the Aleutian Islands through the Bering Strait and into the southern Chukchi Sea. As vessel traffic has increased, the social and natural systems of these regions have been increasingly exposed to the risks posed by large ships, including oil spills, underwater noise pollution, large cetacean ship-strikes, and discharges of pollutants. This dataset provides scientific researchers, regulatory managers, local community members, maritime industry representatives, and other decision makers with a quantitative means to evaluate the distribution and intensity of shipping across space and through time.
 
+---
+
 ### Data Sources and Preprocessing
 
 The AIS data used in this workflow originates from **[Spire](https://spire.com/maritime/)** (formerly known as exactEarth). The data were acquired in three distinct batches:
@@ -26,7 +28,9 @@ The AIS data used in this workflow originates from **[Spire](https://spire.com/m
 - **2021-2022**
 - **2023-2024**
 
-Each batch was pre-processed slightly differently by the provider. To ensure compatibility across all three datasets, the preprocessing script (`1-Prep.R`) contains functions to standardize the formatting, structure, and variable names. This ensures that all datasets can be seamlessly integrated and processed in the same workflow.
+Each batch was pre-processed slightly differently by the provider (see below). To ensure compatibility across all three datasets, the preprocessing script (`1-Prep.R`) contains functions to standardize the formatting, structure, and variable names. This ensures that all datasets can be seamlessly integrated and processed in the same workflow.
+
+---
 
 ## Usage
 
@@ -58,10 +62,51 @@ For large AIS datasets, we recommend:
 - **Memory**: At least 16GB RAM
 - **Processor**: Multi-core CPU for parallel processing
 
+---
+
 ## Workflow
 
-AIS data are processed in batches ;SLKDAFA;SLKDFJA;LSKDJ
-ADD IN WORKFLOW DIAGRAM 
+### 1. Input Sources
+- **2015–2020 AIS data**
+- **2021–2022 AIS data**
+- **2023–2024 AIS data**
+
+### 2. Preparation
+- **Rename files to include month of transmission** *(only for 2023–2024 data)*
+- **Generate scrambled MMSIs** for anonymization
+
+**Note:** The following steps are run **on each month of data individually**. The process varies slightly depending on the year of the data.
+
+### 3. Pre-processing
+- **Standardize column names** across input datasets
+- **Ensure data types are correct** (e.g., speed is numeric)
+- **Integrate static and position messages** *(only for 2015–2020 data)*
+
+### 4. Cleaning
+- Remove NA latitude/longitude values
+- Remove MMSI entries with fewer than 9 digits
+- Remove "Aids to Navigation"
+- Anonymize ship IDs (e.g., using functions like `scramblemmsi`)
+- Remove multiple repeat messages from the exact same location
+- Identify stopped vessels based on parameters:
+  - Speed < 2 km/hr for >1 hour
+- Determine whether transmission occurred during **daytime or night**
+  - Based on time, location, and solar position
+- Identify ship type
+
+### 5. Vectorization (Connecting the Dots)
+- **Connect points into lines**
+  - Do **not** connect if:
+    - Time gap > 6 hours **or**
+    - Distance gap > 60 km
+  - If multiple non-null ship attributes (type, country, size, destination, etc.) appear within a line segment, return NA
+- **Start new line segments** when:
+  - A new month begins
+  - Ship comes to a stop
+  - (Optional) A **day/night transition** occurs *(not used this time)*
+- **Connect segments** when a transition is detected (e.g., last point in one segment is connected to the first of the next)
+
+---
 
 ## Scripts
 
@@ -86,7 +131,7 @@ ADD IN WORKFLOW DIAGRAM
 - **Functionality**:
   - Loads raw AIS data.
   - Cleans and processes data using functions from scripts 1, 2, 3, and 4.
-  - Outputs processed data in specified formats (vector, hex, raster).
+  - Outputs processed data in specified formats (vector, hex).
 
 ### `Master_Script.R` 
 - **Purpose**: Implements parallelized processing of AIS data.
@@ -95,25 +140,33 @@ ADD IN WORKFLOW DIAGRAM
   - Calls `process_ais_data()` in parallel using `foreach` and `doParallel`.
 - **Outputs**: Parallelized execution of data processing, saving results efficiently.
 
+---
+
 ## Changeable Parameters
 
 The following parameters can be modified in `5-MasterFunction.R`:
 
-- `output`: Specifies output format (`"vector"`, `"hex"`, `"raster"`).
+- `output`: Specifies output format (`"vector"`, `"hex"`).
 - `speed_threshold`: Speed below which a vessel is considered stopped (default: 2 knots).
 - `time_threshold`: Minimum stop duration (default: 1 hour).
 - `timediff_threshold`: Time gap defining new track segments (default: 6 hours).
 - `distdiff_threshold`: Distance gap defining new track segments (default: 60 units).
 - `daynight`: Specify whether output should be divided by whether it occurred during daytime and nighttime based on the latitude, longitude, timestamp, and solar position of the ship.
 
+---
+
 ## Location of Data
 
-Raw data is stored in `../Data_Raw/`, and processed outputs are saved in `../Data_Processed_V4/` under different formats (vector, hex, raster).
+Raw data is stored in `../Data_Raw/`, and processed outputs are saved in `../Data_Processed_V4/` under different formats (vector, hex, csv summary).
+
+---
 
 ### Data Accessibility
 
 - **Proprietary Data:** The raw AIS data, as well as the cleaned points and vector data, are proprietary and restricted for use within the team only. These datasets cannot be distributed beyond the authorized research group.
 - **Publicly Available Data:** The hex-grid data and (once available) raster outputs will be published in the **NSF Arctic Data Center repository** ([arcticdata.io](https://arcticdata.io)) for public access and reuse.
+
+---
 
 ## File Structure 
 ```
@@ -154,6 +207,8 @@ Raw data is stored in `../Data_Raw/`, and processed outputs are saved in `../Dat
 │── .gitignore                      # Specifies files to exclude from version control
 ```
 
+---
+
 ### Key Notes on File Structure: 
 - Raw data (`/Data_Raw/`): Stores input files obtained from Spire (exactEarth). These are not publicly shareable.
 - Processed data (`/Data_Processed_V4/`): Stores cleaned and transformed outputs. The hex data and raster outputs (once available) will be publicly accessible, while cleaned points and vector data are proprietary.
@@ -161,14 +216,18 @@ Raw data is stored in `../Data_Raw/`, and processed outputs are saved in `../Dat
 - Metadata (`/Metadata/`): Stores metadata files describing processing results and performance (useful for tracking issues and reproducibility).
 - README.md: Provides documentation, workflow instructions, and guidelines.
 
+---
+
 ## Areas in Progress
 
 - **Raster Outputs**: The workflow currently supports vectorized and hex-grid outputs. Rasterization is not yet implemented.
 - **Additional Data Cleaning Rules**: More criteria may be added to refine ship track segmentation.
 
+---
+
 ## How to Contribute
 
-We encourage contributions to improve the pipeline! Here’s how you can help:
+We encourage contributions to improve the pipeline or adapt it to work with other data sources! Here’s how you can help:
 
 1. **Report Issues**: If you encounter bugs, report them in the repository’s issue tracker.
 2. **Suggest Enhancements**: Have ideas for improvement? Open a discussion!
@@ -180,10 +239,14 @@ We encourage contributions to improve the pipeline! Here’s how you can help:
    - Make changes in a new branch.
    - Submit a PR describing your modifications.
 
+---
+
 ## Contributors
 
 Kelly Kapsar (2015-2020, 2021-2022, and 2023-2024)
 Ben Sullender (2015-2020 data set)
+
+---
 
 ## Funding 
 
